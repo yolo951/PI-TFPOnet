@@ -1,6 +1,4 @@
 
-import sys
-sys.path.insert(0, '../nips/')
 import torch
 from collections import OrderedDict
 
@@ -10,26 +8,17 @@ from scipy.special import airy
 from scipy.integrate import quad
 from math import sqrt
 from scipy import interpolate
-# import generate_data_1d
-
-# warnings.filterwarnings('ignore')
-
-# np.random.seed(1234)
-
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-
-
-
 
 
 # solve equation -u''(x)+q(x)u(x)=F(x)
 def discontinuous_tfpm(f, N):
 
     def q(x):
-        return np.where(x<=0.5, 5000.0, 100*(4+32*x))
+        return np.where(x<=0.5, 5.0, 0.1*(4+32*x))
 
     def q2(x):
-        return 100*(4+32*x)
+        return 0.1*(4+32*x)
 
     def F(x):
         return f(x)
@@ -39,12 +28,20 @@ def discontinuous_tfpm(f, N):
         G = np.where(y >= s, s-y, 0)
         return F(s)*G
 
+    def integrandp_linear(s):  # for -u''=f
+        G = np.where(y >= s, -1.0, 0)
+        return F(s)*G
+
     def integrand_sinh(s):  # for -u''+bu = f, b>0
         G = 1/2/sqrt(b)*np.where(y >= s, np.sinh(sqrt(b)*(s-y)), np.sinh(sqrt(b)*(y-s)))
         return F(s) * G
 
     def integrandp_sinh(s):
         G = 1/2*np.where(y >= s, -np.cosh(sqrt(b)*(s-y)), np.cosh(sqrt(b)*(y-s)))
+        return F(s) * G
+
+    def integrandpp_sinh(s):
+        G = sqrt(b)/2*np.where(y >= s, np.sinh(sqrt(b)*(s-y)), np.sinh(sqrt(b)*(y-s)))
         return F(s) * G
 
     def integrand_airy(s):  # for -u'' + (ax+b)u = f
@@ -57,7 +54,10 @@ def discontinuous_tfpm(f, N):
                               airy(s)[0] * airy(z)[3] - airy(s)[2] * airy(z)[1])
         return 1/np.cbrt(a)*G*F(s/np.cbrt(a)-b/a)
 
-
+    def integrandpp_airy(s):
+        G = np.pi/2 * np.where(z >= s, airy(s)[2] * airy(z)[1] - airy(s)[0] * airy(z)[3],
+                              airy(s)[0] * airy(z)[3] - airy(s)[2] * airy(z)[1])
+        return z*G*F(s/np.cbrt(a)-b/a)
     # interpolate_f = interpolate.interp1d(np.linspace(0, 1, N), f)
     x = np.zeros((N), dtype=np.float64)
     x1 = np.zeros((int((N+1)/2)), dtype=np.float64)
@@ -79,12 +79,23 @@ def discontinuous_tfpm(f, N):
             mu1 = grid[0]
             y = grid[0]
             F1 = quad(integrand_linear, grid[0], grid[1])[0]
+            lambda1p = 0.0
+            mu1p = 1.0
+            F1p = quad(integrandp_linear, grid[0], grid[1])[0]
+            lambda1pp = 0.0
+            mu1pp = 0.0
+            F1pp = 0.0
         else:
-            # b = abs(b)
             lambda1 = np.exp(grid[0] * sqrt(b))
             mu1 = np.exp(-grid[0] * sqrt(b))
             y = grid[0]
             F1 = quad(integrand_sinh, grid[0], grid[1])[0]
+            lambda1p = sqrt(b) * np.exp(grid[0] * sqrt(b))
+            mu1p = -sqrt(b) * np.exp(-grid[0] * sqrt(b))
+            F1p = quad(integrandp_sinh, grid[0], grid[1])[0]
+            lambda1pp = b * np.exp(grid[0] * sqrt(b))
+            mu1pp = b * np.exp(-grid[0] * sqrt(b))
+            F1pp = quad(integrandpp_sinh, grid[0], grid[1])[0]
     else:
         z1 = q(grid[0]) * np.power(np.abs(a), -2 / 3)  # 如果直接使用np.power(a, -2/3),可能会计算出来复数
         z2 = q(grid[1]) * np.power(np.abs(a), -2 / 3)
@@ -92,9 +103,17 @@ def discontinuous_tfpm(f, N):
         mu1 = airy(z1)[2]
         z = z1
         F1 = quad(integrand_airy, z1, z2)[0] if z2 >= z1 else quad(integrand_airy, z2, z1)[0]
+        lambda1p = airy(z1)[1]
+        mu1p = airy(z1)[3]
+        F1p = quad(integrandp_airy, z1, z2)[0] if z2 >= z1 else quad(integrandp_airy, z2, z1)[0]
+        lambda1pp = z1 * airy(z1)[0]
+        mu1pp = z1 * airy(z1)[2]
+        F1pp = quad(integrandpp_airy, z1, z2)[0] if z2 >= z1 else quad(integrandpp_airy, z2, z1)[0]
     U[0,:2] = np.array([-lambda1, -mu1])
     B[0] = F1
     coeff = [[lambda1, mu1, F1]]
+    coeffp = [[lambda1p, mu1p, F1p]]
+    coeffpp = [[lambda1pp, mu1pp, F1pp]]
     for i in range(1, 2*N-3, 2):
         c= np.polyfit(grid[i//2:i//2+2], np.array([cRight[i//2], cLeft[i//2+1]]), 1)
         a1, b1 = c[0], c[1]
@@ -109,6 +128,9 @@ def discontinuous_tfpm(f, N):
                 y = grid[i//2 + 1]
                 F1 = quad(integrand_linear, grid[i//2], grid[i//2+1])[0]
                 G1 = -quad(F, grid[i//2], grid[i//2+1])[0]
+                lambda1pp = 0.0
+                mu1pp = 0.0
+                F1pp = 0.0
             else:
                 # b1 = abs(b1)
                 # b2 = abs(b2)
@@ -119,6 +141,9 @@ def discontinuous_tfpm(f, N):
                 y, b = grid[i // 2 + 1], b1
                 F1 = quad(integrand_sinh, grid[i // 2], grid[i // 2 + 1])[0]
                 G1 = quad(integrandp_sinh, grid[i // 2], grid[i // 2 + 1])[0]
+                lambda1pp = b1 * lambda1
+                mu1pp = b1 * mu1
+                F1pp = quad(integrandpp_sinh, grid[i // 2], grid[i // 2 + 1])[0]
         else:
             z1 = cRight[i//2] * np.power(np.abs(a1), -2 / 3)
             z2 = cLeft[i//2+1]* np.power(np.abs(a1), -2 / 3)
@@ -128,6 +153,9 @@ def discontinuous_tfpm(f, N):
             a, b, z = a1, b1, z2
             F1 = quad(integrand_airy, z1, z2)[0] if z2 >= z1 else quad(integrand_airy, z2, z1)[0]
             G1 = quad(integrandp_airy, z1, z2)[0] if z2 >= z1 else quad(integrandp_airy, z2, z1)[0]
+            lambda1pp = z1 * lambda1
+            mu1pp = z1 * mu1
+            F1pp = quad(integrandpp_airy, z1, z2)[0] if z2 >= z1 else quad(integrandpp_airy, z2, z1)[0]
         if abs(a2) < 1e-8:
             if abs(b2) < 1e-8:
                 lambda2, gamma2, delta2 = 1, 0, 1
@@ -157,6 +185,8 @@ def discontinuous_tfpm(f, N):
         U[i, i-1:i+3] = np.array([lambda1, mu1, -lambda2, -mu2])
         U[i+1, i - 1:i + 3] = np.array([gamma1, delta1, -gamma2, -delta2])
         coeff.append([lambda1, mu1, F1])
+        coeffp.append([gamma1, delta1, G1])
+        coeffpp.append([lambda1pp, mu1pp, F1pp])
     c = np.polyfit(grid[-2:], np.array([cRight[-2], cLeft[-1]]), 1)
     a, b = c[0], c[1]
     # a, b = interp_coeff[-1]
@@ -166,12 +196,24 @@ def discontinuous_tfpm(f, N):
             mu1 = grid[-1]
             y = grid[-1]
             F1 = quad(integrand_linear, grid[-2], grid[-1])[0]
+            lambda1p = 0.0
+            mu1p = 1.0
+            F1p = quad(integrandp_linear, grid[-2], grid[-1])[0]
+            lambda1pp = 0.0
+            mu1pp = 0.0
+            F1pp = 0.0
         else:
             # b = abs(b)
             lambda1 = np.exp(sqrt(b)*grid[-1])
             mu1 = np.exp(-sqrt(b)*grid[-1])
             y = grid[-1]
             F1 = quad(integrand_sinh, grid[-2], grid[-1])[0]
+            lambda1p = sqrt(b) * np.exp(grid[-1] * sqrt(b))
+            mu1p = -sqrt(b) * np.exp(-grid[-1] * sqrt(b))
+            F1p = quad(integrandp_sinh, grid[-2], grid[-1])[0]
+            lambda1pp = b * np.exp(grid[-1] * sqrt(b))
+            mu1pp = b * np.exp(-grid[-1] * sqrt(b))
+            F1pp = quad(integrandpp_sinh, grid[-2], grid[-1])[0]
     else:
         z1 = q(grid[-2]) * np.power(np.abs(a), -2 / 3)
         z2 = q(grid[-1]) * np.power(np.abs(a), -2 / 3)
@@ -179,34 +221,48 @@ def discontinuous_tfpm(f, N):
         mu1 = airy(z2)[2]
         z = z2
         F1 = quad(integrand_airy, z1, z2)[0] if z2 >= z1 else quad(integrand_airy, z2, z1)[0]
+        lambda1p = airy(z2)[1]
+        mu1p = airy(z2)[3]
+        F1p = quad(integrandp_airy, z1, z2)[0] if z2 >= z1 else quad(integrandp_airy, z2, z1)[0]
+        lambda1pp = z2 * airy(z2)[0]
+        mu1pp = z2 * airy(z2)[2]
+        F1pp = quad(integrandpp_airy, z1, z2)[0] if z2 >= z1 else quad(integrandpp_airy, z2, z1)[0]
     U[2*N-3, -2:] = np.array([-lambda1, -mu1])
     B[2*N-3] = F1
     B[N-2] -= 1.0
     B[N-1] -= 1.0
     coeff.append([lambda1, mu1, F1])
+    coeffp.append([lambda1p, mu1p, F1p])
+    coeffpp.append([lambda1pp, mu1pp, F1pp])
 
-
-    # U_with_inf = np.where(U == 0, np.inf, U)
     max_idx = np.argmax(np.abs(U), axis=0)
     M_inverse = np.diag(1/np.abs(U[max_idx,range(U.shape[1])]))
     scaled_U = np.matmul(U, M_inverse)
     AB = np.linalg.solve(scaled_U, B).flatten() # scaled AB
-    # update scaled local basis
-    coeff[0][:2] = scaled_U[0, :2]
-    for j in range(1, N):
-        coeff[j][:2] = scaled_U[2*j-1, 2*(j-1):2*j]
-    
+
+    scale = np.diag(M_inverse)
+    scale1 = scale[::2]
+    scale2 = scale[1::2]
+    for i in range(1, len(coeffp)):
+        coeff[i][0] *= scale1[i-1]
+        coeff[i][1] *= scale2[i-1]
+        coeffp[i][0] *= scale1[i-1]
+        coeffp[i][1] *= scale2[i-1]
+        coeffpp[i][0] *= scale1[i-1]
+        coeffpp[i][1] *= scale2[i-1]
+
     # AB = np.linalg.solve(U, B).flatten()
     each_x = np.zeros(N)
-    each_x[0] = AB[0]*coeff[0][0]+AB[1]*coeff[0][1]+coeff[0][2]
-    for i in range(1, N):
+    # boundary val = 0
+    # each_x[0] = AB[0]*coeff[0][0]+AB[1]*coeff[0][1]+coeff[0][2]
+    for i in range(1, N-1):
         each_x[i] = AB[2*(i-1)]*coeff[i][0]+AB[2*(i-1)+1]*coeff[i][1]+coeff[i][2]
     x[:] = each_x
 
     x1[:] = x[:int((N+1)/2)]
     x2[:] = x[int((N+1)/2)-1:]
     x2[0] += 1
-    return x1, x2, scaled_U, B, coeff, AB
+    return x1, x2, scaled_U, B, coeff, AB, coeffp, coeffpp
 
 
 class DNN(torch.nn.Module):
@@ -235,9 +291,9 @@ class DNN(torch.nn.Module):
 
 
 class PhysicsInformedNN():
-    def __init__(self, X, U, B, layers):
+    def __init__(self, X, U, B, layers, coeff, coeffpp):
         
-        self.x = torch.tensor(X.reshape((-1, 1)), requires_grad=True).float().to(device)
+        self.x = torch.tensor(X.reshape((-1, 1))).float().to(device)
         U = torch.tensor(U).float().to(device)
         B = torch.tensor(B).float().to(device)
 
@@ -257,53 +313,69 @@ class PhysicsInformedNN():
             tolerance_change=1.0 * np.finfo(float).eps,
             line_search_fn="strong_wolfe"
         )
-        self.optimizer_Adam = torch.optim.Adam(self.dnn.parameters(), lr=1e-3, weight_decay=1e-4)
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer_Adam, step_size=200, gamma=0.6)
+        self.optimizer = torch.optim.Adam(self.dnn.parameters(), lr=1e-3, weight_decay=1e-4)
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=10000, gamma=0.6)
+        # self.optimizer = torch.optim.SGD(self.dnn.parameters(), lr=0.001)
         self.iter = 0
         self.loss = torch.nn.MSELoss()
         self.loss_history = []
-        self.gamma = 1000.0
+        self.gamma = 100.0
         self.gamma_interface = 1.0
+        self.gamma_equ = 10.0
+        self.coeff = torch.tensor(coeff).float().to(device)
+        self.coeffpp = torch.tensor(coeffpp).float().to(device)
         
-
-    def loss_func(self):
-        self.optimizer.zero_grad()
-        AB_pred = self.dnn(self.x)
-        AB_pred = AB_pred.flatten()
-        loss = self.gamma*self.loss(torch.matmul(self.U, AB_pred), self.B) + self.gamma_interface*self.loss(torch.matmul(self.U_interface, AB_pred), self.B_interface)
-        loss.backward()
-
-        self.loss_history.append(loss.item())
-        self.iter += 1
-        if (self.iter+1) % 1 == 0:
-            print(f'LBFGS optimizer {self.iter}th Loss {loss.item()}')
+    def loss_equ(self):
+        q = lambda x: torch.where(x<=0.5, 5.0, 0.1*(4+32*x))
+        f = lambda x: x
+        AB = self.dnn(self.x)
+        u = torch.sum(self.coeff[1:-1, :2] * AB[:-1], dim=1) + self.coeff[1:-1, 2]
+        upp = torch.sum(self.coeffpp[1:-1, :2] * AB[:-1], dim=1) + self.coeffpp[1:-1, 2]
+        loss = self.loss(-upp+q(self.x[:-1])*u, f(self.x[:-1]))
         return loss
+
+    # def loss_func(self):
+    #     self.optimizer.zero_grad()
+    #     AB_pred = self.dnn(self.x)
+    #     AB_pred = AB_pred.flatten()
+    #     loss = self.gamma*self.loss(torch.matmul(self.U, AB_pred), self.B) + self.gamma_interface*self.loss(torch.matmul(self.U_interface, AB_pred), self.B_interface)
+    #     loss += self.gamma_equ*self.loss_equ()
+    #     loss.backward()
+
+    #     self.loss_history.append(loss.item())
+    #     self.iter += 1
+    #     if (self.iter+1) % 1 == 0:
+    #         print(f'LBFGS optimizer {self.iter}th Loss {loss.item()}')
+    #     return loss
     
-    def train(self, nIter):
+    def train(self, nIter1, nIter):
         self.dnn.train()
         for epoch in range(nIter):
-            self.optimizer_Adam.zero_grad()
+            self.optimizer.zero_grad()
             AB_pred = self.dnn(self.x)
             AB_pred = AB_pred.flatten()
-            loss = self.gamma*self.loss(torch.matmul(self.U, AB_pred), self.B) + self.gamma_interface*self.loss(torch.matmul(self.U_interface, AB_pred), self.B_interface)
+            if epoch <= nIter1:
+                loss = self.loss_equ()
+            else:
+                loss = self.gamma*self.loss(torch.matmul(self.U, AB_pred), self.B)\
+                      + self.gamma_interface*self.loss(torch.matmul(self.U_interface, AB_pred), self.B_interface)
+            # loss = self.gamma*self.loss(torch.matmul(self.U, AB_pred), self.B) + self.gamma_interface*self.loss(torch.matmul(self.U_interface, AB_pred), self.B_interface)
+            # loss += self.gamma_equ*self.loss_equ()
             loss.backward()
-            self.optimizer_Adam.step()
+            self.optimizer.step()
             self.scheduler.step()
 
             self.loss_history.append(loss.item())
             if (epoch+1) % 100 == 0:
-                print(f'Adam optimizer {epoch}th Loss {loss.item()}')
-                
-        # Backward and optimize
-        self.optimizer.step(self.loss_func)
+                print(f'Adam(or SGD) optimizer {epoch}th Loss {loss.item()}')
+        # self.optimizer.step(self.loss_func)
     
-    def predict(self, x, coeff, AB):
+    def predict(self, x, coeff):
         x = torch.tensor(x.reshape((-1, 1))).float().to(device)
         self.dnn.eval()
         pred_AB = self.dnn(x)
         pred_AB = pred_AB.detach().cpu().numpy()
         pred_u = np.zeros(x.numel())
-        pred_AB[1:,:] = AB.reshape((-1,2))
         for i in range(1, x.numel()):
             pred_u[i] = pred_AB[i, 0]*coeff[i][0]+pred_AB[i, 1]*coeff[i][1]+coeff[i][2]
         return pred_u
@@ -311,42 +383,19 @@ class PhysicsInformedNN():
 
 
 
-N_x = 101
-layers = [1, 20, 20, 20, 2]
+N_x = 21
+layers = [1, 20, 15, 10, 2]
 gridx = np.linspace(0, 1, N_x)
 f = lambda x: x
-u1, u2, U, B, coeff, AB = discontinuous_tfpm(f, N_x)
-# plt.plot(gridx[:501], u1.flatten(), label='u1')
-# plt.plot(gridx[500:], u2.flatten(), label='u2')
-# plt.legend()
+u1, u2, U, B, coeff, AB, coeffp, coeffpp = discontinuous_tfpm(f, N_x)
+# plt.plot(gridx[:int(N_x/2+1)], u1, 'r-', label='Ground Truth', alpha=1., zorder=0)
+# plt.plot(gridx[int(N_x/2+1):], u2[1:], 'r-', alpha=1., zorder=0)
 # plt.show()
 
 
-
-# reshaped_U = np.zeros((U.shape[0], U.shape[1]+2))
-# reshaped_U[0, :2] = U[0, :2]
-# reshaped_U[1:, 2:] = U[1:, :]
-
-# sparse_U = np.zeros((U.shape[0], 4))
-# sparse_U[0, :2] = reshaped_U[0, :2]
-# for j in range(1, N_x-1):
-#     sparse_U[2*j-1] = reshaped_U[2*j-1, 2*j:2*j+4]
-#     sparse_U[2*j] = reshaped_U[2*j, 2*j:2*j+4]
-# sparse_U[2*(N_x-1)-1, :2] = reshaped_U[2*(N_x-1)-1, -2:]
-# interior_U = sparse_U[1:-1].reshape((N_x-2, 2, 4))
-# boundary_U = np.stack((sparse_U[0, :2], sparse_U[-1, :2]))
-# interior_B = B[1:-1]
-# boundary_B = np.array([B[0], B[-1]])
-# interior_x = np.concatenate((gridx[:-2], gridx[1:-1]))
-# boundary_x = np.array([gridx[0], gridx[-1]])
-
-
-model = PhysicsInformedNN(gridx[1:], U, B, layers)
-model.train(5000)
-
-prediction = model.predict(gridx, coeff, AB)  #evaluate model
-
-
+model = PhysicsInformedNN(gridx[1:], U, B, layers, coeff, coeffpp)
+model.train(5000, 100000)
+prediction = model.predict(gridx, coeff)
 
 plt.figure()
 # plt.plot(gridx, groundTruth[:], '-', label='Ground Truth', alpha=1.0, zorder=0) #analytical
