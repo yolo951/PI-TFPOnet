@@ -15,13 +15,13 @@ device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cp
 def discontinuous_tfpm(f, N):
 
     def q(x):
-        return np.where(x<=0.5, 5000.0, 100.0*(4+32*x))
+        return np.where(x<=0.5, 5.0, 0.1*(4+32*x))
 
     def q2(x):
-        return 100.0*(4+32*x)
+        return 0.1*(4+32*x)
 
     def F(x):
-        return 1000.0*f(x)
+        return f(x)
         # return interpolate_f(x)[k]
 
     def integrand_linear(s):  # for -u''=f
@@ -276,12 +276,25 @@ class PhysicsInformedNN():
         B = torch.tensor(B).float().to(device)
 
         N = int(U.shape[0]/2)
-        self.U = torch.cat((U[1:N-1,:], U[N+1:-1,:]), dim=0)
-        self.U_boundary = torch.stack((U[0,:], U[-1,:]))
-        self.U_interface = U[N-1:N+1, :]
-        self.B = torch.cat((B[1:N-1], B[N+1:-1]), dim=0)
+        self.U = torch.zeros((2*N-2, 2*N+2)).float().to(device)
+        self.U_boundary = torch.zeros((2, 2*N+2)).float().to(device)
+        self.U_interface = torch.zeros((2, 2*N+2)).float().to(device)
+        self.U[2:, 2:] = torch.cat((U[1:N-1,:], U[N+1:-1,:]), dim=0)
+        self.U[0, :3] = torch.tensor([1.0, 0.0, -1.0])
+        self.U[1, 1:4] = torch.tensor([1.0, 0.0, -1.0])
+        self.U_boundary[0, :-2] = U[0,:]
+        self.U_boundary[-1, 2:] = U[-1,:]
+        self.U_interface[:, 2:] = U[N-1:N+1, :]
+        self.B = torch.zeros((2*N-2)).float().to(device)
+        self.B[2:] = torch.cat((B[1:N-1], B[N+1:-1]), dim=0)
         self.B_interface = B[N-1:N+1]
         self.B_boundary = torch.stack((B[0], B[-1]))
+        # self.U = torch.cat((U[1:N-1,:], U[N+1:-1,:]), dim=0)
+        # self.U_boundary = torch.stack((U[0,:], U[-1,:]))
+        # self.U_interface = U[N-1:N+1, :]
+        # self.B = torch.cat((B[1:N-1], B[N+1:-1]), dim=0)
+        # self.B_interface = B[N-1:N+1]
+        # self.B_boundary = torch.stack((B[0], B[-1]))
         self.dnn = DNN(layers).to(device)
         self.optimizer = torch.optim.LBFGS(
             self.dnn.parameters(), 
@@ -293,30 +306,32 @@ class PhysicsInformedNN():
             tolerance_change=1.0 * np.finfo(float).eps,
             line_search_fn="strong_wolfe"
         )
-        self.optimizer = torch.optim.Adam(self.dnn.parameters(), lr=2e-2, weight_decay=1e-4)
+        self.optimizer = torch.optim.Adam(self.dnn.parameters(), lr=2e-3, weight_decay=1e-4)
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=2000, gamma=0.6)
         self.iter = 0
         self.loss = torch.nn.MSELoss()
         self.loss_history = []
-        self.gamma = 1e-2
-        self.gamma_interface = 1e-2
-        self.gamma_boundary = 1.0
+        self.lossContinuos_history = []
+        self.lossJump_history = []
+        self.lossBoundary_history = []
+        self.gamma = 100.0
+        self.gamma_interface = 1.0
+        self.gamma_boundary = 100.0
         self.gamma_equ = 10.0
         self.coeff = torch.tensor(coeff).float().to(device)
         self.coeffpp = torch.tensor(coeffpp).float().to(device)
         
     def loss_equ(self):
-        q = lambda x: torch.where(x<=0.5, 5000.0, 100.0*(4+32*x))
-        qh = lambda x: torch.where(x<=0.5, 5000.0, 100.0*(4+32*x))
-        f = lambda x: 1000.0*x
+        q = lambda x: torch.where(x<=0.5, 5.0, 0.1*(4+32*x))
+        qh = lambda x: torch.where(x<=0.5, 5.0, 0.1*(4+32*x))
+        f = lambda x: x
         AB = self.dnn(self.x)
         u0 = torch.sum(self.coeff[1:-1, :2] * AB[:-1], dim=1)
         upp0 = torch.sum(self.coeffpp[1:-1, :2] * AB[:-1], dim=1)
         # FG = \int F*G, -FG''+qh*FG=F
         # then -FG''+q*FG = -FG''+qh*FG+(q-qh)*FG=F+(q-qh)*FG
-        # -u0''+qh*u0=0, loss=-u0''+q*u0=-u0''+qh*u0+(q-qh)*u0=(q-qh)*u0
-        loss = self.loss(upp0, q(self.x[:-1]).flatten()*u0) + \
-            self.loss(qh(self.x[:-1]).flatten()*self.coeff[1:-1, 2], q(self.x[:-1]).flatten()*self.coeff[1:-1, 2])
+        loss = self.loss(upp0, q(self.x[1:-1]).flatten()*u0) + \
+            self.loss(qh(self.x[1:-1]).flatten()*self.coeff[1:-1, 2], q(self.x[1:-1]).flatten()*self.coeff[1:-1, 2])
         # loss = self.loss(-upp+q(self.x[:-1]).flatten()*u, f(self.x[:-1]).flatten())
         return loss
 
@@ -335,6 +350,7 @@ class PhysicsInformedNN():
     #     if (self.iter+1) % 1 == 0:
     #         print(f'LBFGS optimizer {self.iter}th Loss {loss.item()}')
     #     return loss
+    
     def train(self, nIter1, nIter):
         self.dnn.train()
         for epoch in range(nIter):
@@ -344,14 +360,18 @@ class PhysicsInformedNN():
             if epoch <= nIter1:
                 loss = self.loss_equ()
             else:
-                loss = self.gamma*self.loss(torch.matmul(self.U, AB_pred), self.B)\
-                    +self.gamma_boundary*self.loss(torch.matmul(self.U_boundary, AB_pred), self.B_boundary)\
-                      + self.gamma_interface*self.loss(torch.matmul(self.U_interface, AB_pred), self.B_interface)
+                lossContinuous = self.gamma*self.loss(torch.matmul(self.U, AB_pred), self.B)
+                lossBoundary = self.gamma_boundary*self.loss(torch.matmul(self.U_boundary, AB_pred), self.B_boundary)
+                lossJump = self.gamma_interface*self.loss(torch.matmul(self.U_interface, AB_pred), self.B_interface)
+                loss = lossContinuous + lossBoundary + lossJump
             loss.backward()
             self.optimizer.step()
             self.scheduler.step()
 
             self.loss_history.append(loss.item())
+            self.lossContinuos_history.append(lossContinuous.item())
+            self.lossBoundary_history.append(lossBoundary.item())
+            self.lossJump_history.append(lossJump.item())
             if (epoch+1) % 100 == 0:
                 print(f'Adam(or SGD) optimizer {epoch}th Loss {loss.item()}')
         # self.optimizer.step(self.loss_func)
@@ -363,16 +383,16 @@ class PhysicsInformedNN():
         pred_AB = self.dnn(x)
         pred_AB = pred_AB.detach().cpu().numpy()
         pred_u = np.zeros(x.numel())
-        pred_u[0] = pred_AB[1, 0]*coeff[0][0]+pred_AB[1, 1]*coeff[0][1]+coeff[0][2]
-        for i in range(1, x.numel()):
+        # pred_u[0] = pred_AB[1, 0]*coeff[0][0]+pred_AB[1, 1]*coeff[0][1]+coeff[0][2]
+        for i in range(x.numel()):
             pred_u[i] = pred_AB[i, 0]*coeff[i][0]+pred_AB[i, 1]*coeff[i][1]+coeff[i][2]
         return pred_u
 
-# 输入gridx, A0*Ai(0)+B0*Bi(0)+F0=0, A0=A1, B0=B1
+
 
 
 N_x = 11
-layers = [1, 20, 15, 20, 2]
+layers = [1, 20, 15, 10, 2]
 gridx = np.linspace(0, 1, N_x)
 f = lambda x: x
 u1, u2, U, B, coeff, AB, coeffp, coeffpp = discontinuous_tfpm(f, N_x)
@@ -381,8 +401,8 @@ u1, u2, U, B, coeff, AB, coeffp, coeffpp = discontinuous_tfpm(f, N_x)
 # plt.show()
 
 
-model = PhysicsInformedNN(gridx[1:], U, B, layers, coeff, coeffpp)
-model.train(-1, 20000)
+model = PhysicsInformedNN(gridx, U, B, layers, coeff, coeffpp)
+model.train(-1, 5000)
 prediction = model.predict(gridx, coeff)
 
 plt.figure()
@@ -405,7 +425,11 @@ plt.grid()
 
 plt.subplot(1, 2, 2)
 plt.title("training loss")
-plt.plot(model.loss_history)
+plt.plot(model.lossBoundary_history, label='boundary loss')
+plt.plot(model.loss_history, label='total loss')
+plt.plot(model.lossContinuos_history, label='continuous loss')
+plt.plot(model.lossJump_history, label='jump loss')
+plt.legend()
 plt.yscale("log")
 plt.xlabel("epoch")
 
