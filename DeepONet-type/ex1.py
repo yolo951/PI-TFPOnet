@@ -8,6 +8,7 @@ from scipy.special import airy
 from scipy.integrate import quad
 from math import sqrt
 from scipy import interpolate
+from generate_f import generate
 import time
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
@@ -118,7 +119,7 @@ def tfpm(grid, qLeft, qRight, F):
     B[N-2] -= 1.0
     B[N-1] -= 1.0
     
-    M_inverse = np.diag(10.0 / np.max(np.abs(U), axis=0))  # 为了让A, B不要那么大
+    M_inverse = np.diag(1 / np.max(np.abs(U), axis=0))
     # M_inverse = np.eye(U.shape[0])
     scaled_U = np.matmul(U, M_inverse)
     AB = np.linalg.solve(scaled_U, B).flatten() # scaled AB
@@ -192,8 +193,8 @@ class PhysicsInformedNN():
         self.U_boundary = torch.zeros((2, 2*N+2)).float().to(device)
         self.U_interface = torch.zeros((2, 2*N+2)).float().to(device)
         self.U[2:, 2:] = torch.cat((U[1:N-1,:], U[N+1:-1,:]), dim=0)
-        self.U[0, :3] = torch.tensor([5.0, 0.0, -5.0])  # 由于U的列被人为放大了，即np.max(U)=10, 这里不能再写成1，否则第一个区间不容易优化
-        self.U[1, 1:4] = torch.tensor([5.0, 0.0, -5.0])
+        self.U[0, :3] = torch.tensor([1.0, 0.0, -1.0])
+        self.U[1, 1:4] = torch.tensor([1.0, 0.0, -1.0])
         self.U_boundary[0, :-2] = U[0,:]
         self.U_boundary[-1, 2:] = U[-1,:]
         self.U_interface[:, 2:] = U[N-1:N+1, :]
@@ -210,7 +211,6 @@ class PhysicsInformedNN():
         self.dnn = DNN(layers).to(device)
         self.optimizer = torch.optim.LBFGS(
             self.dnn.parameters(), 
-            
             lr=1.0, 
             max_iter=50000, 
             max_eval=50000, 
@@ -220,17 +220,17 @@ class PhysicsInformedNN():
             line_search_fn="strong_wolfe"
         )
         self.optimizer = torch.optim.Adam(self.dnn.parameters(), lr=2e-3, weight_decay=1e-4)
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=500, gamma=0.6)
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=100, gamma=0.5)
         self.iter = 0
         self.loss = torch.nn.MSELoss()
         self.loss_history = []
         self.lossContinuos_history = []
         self.lossJump_history = []
         self.lossBoundary_history = []
-        self.gamma = 1.0
+        self.gamma = 100.0
         self.gamma_interface = 1.0
-        self.gamma_boundary = 1.0
-        # self.gamma_equ = 10.0
+        self.gamma_boundary = 100.0
+        self.gamma_equ = 10.0
         # self.coeff = torch.tensor(coeff).float().to(device)
         # self.coeffpp = torch.tensor(coeffpp).float().to(device)
 
@@ -290,10 +290,12 @@ class PhysicsInformedNN():
         # self.optimizer.step(self.loss_func)
     
     def predict(self, grid, x, f_A, f_B, f_F, f_AB):
+        # 训练数据集不包括x=0, 测试时输入x=0，得到的pred_AB不能保证pre_u满足边界条件
         self.dnn.eval()
         pred_AB = self.dnn(torch.tensor(grid).float().to(device)).reshape((len(grid),2))
         pred_AB = pred_AB.detach().cpu().numpy()
         pred_u = np.zeros(len(x))
+        # pred_u[0] = pred_AB[1, 0]*coeff[0][0]+pred_AB[1, 1]*coeff[0][1]+coeff[0][2]
         A_x, B_x = [], []
         A_x_pred, B_x_pred = [], []
         def f_AB_pred(x):
@@ -320,27 +322,27 @@ class PhysicsInformedNN():
         plt.plot(x, B_x_pred, label='prediction')
         plt.title('B(x)')
         plt.legend()
+        # plt.show()
         return pred_u
 
 
-N = 21
-grid = np.linspace(0, 1, N)
-q1 = lambda x: 5.0*1000
-q2 = lambda x: 0.1*(4+32*x)*1000
-F = lambda x: 1000.0*x
-layers = [N, 32, 64, 2*N]
+N = 11
+q1 = lambda x: 5.0
+q2 = lambda x: 0.1*(4+32*x)
+f = generate(samples=10)
+interpolate_f = interpolate.interp1d(np.linspace(0, 1, N), f)
+F = lambda x: x
+layers = [N, 16, 32, 2*N]
 
 q = lambda x: np.where(x<=0.5, q1(x), q2(x))
+grid = np.linspace(0, 1, N)
 qLeft, qRight = q(grid), q(grid)
 qRight[int((N-1)/2)] = q2(grid[int((N-1)/2)])
 
 u1, u2, U, B, f_AB, f_A, f_B, f_F = tfpm(grid, qLeft, qRight, F)
-# plt.plot(grid[:int(N/2+1)], u1, 'r-', label='Ground Truth', alpha=1., zorder=0)
-# plt.plot(grid[int(N/2):], u2, 'r-', alpha=1., zorder=0)
-# plt.show(block=True)
 model = PhysicsInformedNN(grid, U, B, layers)
 start_time = time.time()
-model.train(-1, 3000)
+model.train(-1, 400)
 end_time = time.time()
 elapsed_time = end_time - start_time
 print(f"Training time: {elapsed_time:.6f} seconds")
@@ -350,11 +352,12 @@ grid_fine = np.linspace(0, 1, N_fine)
 prediction = model.predict(grid, grid_fine, f_A, f_B, f_F, f_AB)
 
 q = lambda x: np.where(x<=0.5, q1(x), q2(x))
-qLeft, qRight = q(grid_fine), q(grid_fine)
-qRight[int((N_fine-1)/2)] = q2(grid_fine[int((N_fine-1)/2)])
-u1, u2, U, B, f_AB, f_A, f_B, f_F = tfpm(grid_fine, qLeft, qRight, F)
+grid = np.linspace(0, 1, N_fine)
+qLeft, qRight = q(grid), q(grid)
+qRight[int((N_fine-1)/2)] = q2(grid[int((N_fine-1)/2)])
+u1, u2, U, B, f_AB, f_A, f_B, f_F = tfpm(grid, qLeft, qRight, F)
 print(f'test error on grid with resolution {N_fine}: {1/N_fine*np.sum(np.abs(prediction-np.concatenate((u1, u2[1:]))))}')
-fig = plt.figure(figsize=(7, 3.5), dpi=150)
+fig = plt.figure(figsize=(7, 3), dpi=150)
 plt.subplot(1, 2, 1)
 plt.plot(grid_fine[:int(N_fine/2+1)], u1, 'r-', label='Ground Truth', alpha=1., zorder=0)
 plt.plot(grid_fine[int(N_fine/2+1):], u2[1:], 'r-', alpha=1., zorder=0)
@@ -375,5 +378,5 @@ plt.legend()
 plt.yscale("log")
 plt.xlabel("epoch")
 
-# plt.tight_layout()
+plt.tight_layout()
 plt.show(block=True)

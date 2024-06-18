@@ -5,7 +5,6 @@ from scipy import interpolate
 from sklearn import gaussian_process as gp
 import matplotlib.pyplot as plt
 
-
 # generate random functions(1d) default dim=1001
 def generate(samples=1000, begin=0, end=1, random_dim=101, out_dim=1001, length_scale=1, interp="cubic", A=0):
     space = GRF(begin, end, length_scale=length_scale, N=random_dim, interp=interp)
@@ -13,7 +12,6 @@ def generate(samples=1000, begin=0, end=1, random_dim=101, out_dim=1001, length_
     x_grid = np.linspace(begin, end, out_dim)
     x_data = space.eval_u(features, x_grid[:, None])
     return x_data  # X_data.shape=(samples,out_dim)，每一行表示一个GRF在x_grid上的取值，共有samples个GRF
-
 
 # Gaussian Random Field
 class GRF(object):
@@ -114,4 +112,3 @@ class LpLoss(object):
 
     def __call__(self, x, y):
         return self.rel(x, y)
-
