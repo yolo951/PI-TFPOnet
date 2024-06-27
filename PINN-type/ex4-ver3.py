@@ -143,7 +143,7 @@ class TFPM2d:
         vectorized_u_h = np.vectorize(self.recovery_each)
         return vectorized_u_h(x, y)
 
-N = 4
+N = 5
 x = np.linspace(0, 1, N+1)
 y = np.linspace(0, 1, N+1)
 xx, yy = np.meshgrid(x, y)

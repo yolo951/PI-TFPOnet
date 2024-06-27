@@ -37,7 +37,7 @@ def integrandp_airy(s, z, F, a, b):
     G = np.pi / 2 * np.where(z > s, airy(s)[2] * airy(z)[1] - airy(s)[0] * airy(z)[3], np.where(z < s, airy(s)[0] * airy(z)[3] - airy(s)[2] * airy(z)[1], 0.0))
     return 1 / np.cbrt(a) * G * F(s / np.cbrt(a) - b / a)
 
-def compute_params(a, b, x, x1, x2, y1, y2, f_A_default, f_B_default, f_F_default, F):
+def compute_params(a, b, x, x1, x2, y1, y2, f_A_default, f_B_default, f_rhs_default, F):
     y = a * x +  b
     if abs(a) < 1e-8:
         if abs(b) < 1e-8:
@@ -48,7 +48,7 @@ def compute_params(a, b, x, x1, x2, y1, y2, f_A_default, f_B_default, f_F_defaul
             lamda_p, mu_p, lamda_pp, mu_pp = 0.0, 1.0, 0.0, 0.0
             f_A = lambda x: np.where((x1<x) & (x<=x2), 1.0, f_A_default(x))
             f_B = lambda x: np.where((x1<x) & (x<=x2), x, f_B_default(x))
-            f_F = lambda x: np.where((x1<x) & (x<=x2), quad(integrand_linear, x1, x2, args=(x, F))[0], f_F_default(x))
+            f_rhs = lambda x: np.where((x1<x) & (x<=x2), quad(integrand_linear, x1, x2, args=(x, F))[0], f_rhs_default(x))
         else:
             sqrt_b = np.sqrt(b)
             lamda, mu = np.exp(sqrt_b * x), np.exp(-sqrt_b * x)
@@ -59,7 +59,7 @@ def compute_params(a, b, x, x1, x2, y1, y2, f_A_default, f_B_default, f_F_defaul
             lamda_pp, mu_pp = b * np.exp(x * sqrt_b), b * np.exp(-x * sqrt_b)
             f_A = lambda x: np.where((x1<x) & (x<=x2), np.exp(sqrt_b * x), f_A_default(x))
             f_B = lambda x: np.where((x1<x) & (x<=x2), np.exp(-sqrt_b * x), f_B_default(x))
-            f_F = lambda x: np.where((x1<x) & (x<=x2), quad(integrand_sinh, x1, x2, args=(x, F, b))[0], f_F_default(x))
+            f_rhs = lambda x: np.where((x1<x) & (x<=x2), quad(integrand_sinh, x1, x2, args=(x, F, b))[0], f_rhs_default(x))
     else:
         z, z1, z2 = y * np.power(np.abs(a), -2 / 3), y1 * np.power(np.abs(a), -2 / 3), y2 * np.power(np.abs(a), -2 / 3)
         lamda, gamma, mu, delta = airy(z)
@@ -71,89 +71,101 @@ def compute_params(a, b, x, x1, x2, y1, y2, f_A_default, f_B_default, f_F_defaul
         f_z = lambda x: (a*x+b) * np.power(np.abs(a), -2 / 3)
         f_A = lambda x: np.where((x1<x) & (x<=x2), airy(f_z(x))[0], f_A_default(x))
         f_B = lambda x: np.where((x1<x) & (x<=x2), airy(f_z(x))[2], f_B_default(x))
-        f_F_x = lambda x: quad(integrand_airy, z1, z2, args=(f_z(x), F, a, b))[0] if z2 >= z1 else quad(integrand_airy, z2, z1, args=(f_z(x), F, a, b))[0]
-        f_F = lambda x: np.where((x1<x) & (x<=x2), f_F_x(x), f_F_default(x))
+        f_rhs_x = lambda x: quad(integrand_airy, z1, z2, args=(f_z(x), F, a, b))[0] if z2 >= z1 else quad(integrand_airy, z2, z1, args=(f_z(x), F, a, b))[0]
+        f_rhs = lambda x: np.where((x1<x) & (x<=x2), f_rhs_x(x), f_rhs_default(x))
     if x == grid[0]:
         f_A = lambda x: np.where(x==x1, lamda, f_A_default(x))
         f_B = lambda x: np.where(x==x1, mu, f_B_default(x))
-        f_F = lambda x: np.where(x==x1, F_val, f_F_default(x))
+        f_rhs = lambda x: np.where(x==x1, F_val, f_rhs_default(x))
     
-    return lamda, gamma, mu, delta, F_val, G_val, lamda_p, mu_p, lamda_pp, mu_pp, f_A, f_B, f_F
+    return lamda, gamma, mu, delta, F_val, G_val, lamda_p, mu_p, lamda_pp, mu_pp, f_A, f_B, f_rhs
 
 # solve equation -u''(x)+q(x)u(x)=F(x)
 def tfpm(grid, qLeft, qRight, F):
     N = len(grid)
-    U = np.zeros((2*(N-1), 2*(N-1)), dtype=np.float64)
-    B = np.zeros((2*(N-1),), dtype=np.float64)
-    x1 = np.zeros((int((N+1)/2)), dtype=np.float64)
-    x2 = np.zeros((int((N + 1) / 2)), dtype=np.float64)
-    f_A = lambda x: x
-    f_B = lambda x: x
-    f_F = lambda x: x
-    a, b = compute_coefficients(grid[0], grid[1], qRight[0], qLeft[1])
-    boundary_params = compute_params(a, b, grid[0], grid[0], grid[1], qRight[0], qLeft[1], f_A, f_B, f_F, F)
-    lambda1, gamma1, mu1, delta1, F1, G1, lambda1p, mu1p, lambda1pp, mu1pp, f_A, f_B, f_F = boundary_params
-    U[0,:2] = np.array([-lambda1, -mu1])
-    B[0] = F1
-
-    for i in range(1, 2*N-3, 2):
-        a1, b1 = compute_coefficients(grid[i // 2], grid[i // 2 + 1], qRight[i // 2], qLeft[i // 2 + 1])
-        a2, b2 = compute_coefficients(grid[i // 2 + 1], grid[i // 2 + 2], qRight[i // 2 + 1], qLeft[i // 2 + 2])
-        
-        params1 = compute_params(a1, b1, grid[i // 2 + 1], grid[i // 2], grid[i // 2 + 1], qRight[i // 2], qLeft[i // 2 + 1], f_A, f_B, f_F, F)
-        lambda1, gamma1, mu1, delta1, F1, G1, lambda1p, mu1p, lambda1pp, mu1pp, f_A, f_B, f_F = params1
-        params2 = compute_params(a2, b2, grid[i // 2 + 1], grid[i // 2 + 1], grid[i // 2 + 2], qRight[i // 2 + 1], qLeft[i // 2 + 2], f_A, f_B, f_F, F)
-        lambda2, gamma2, mu2, delta2, F2, G2, lambda2p, mu2p, lambda2pp, mu2pp, f_A, f_B, f_F = params2
-
-        B[i] = F2 - F1
-        B[i+1] = G2 - G1
-        U[i, i-1:i+3] = np.array([lambda1, mu1, -lambda2, -mu2])
-        U[i+1, i - 1:i + 3] = np.array([gamma1, delta1, -gamma2, -delta2])
-
-    a, b = compute_coefficients(grid[-2], grid[-1], qRight[-2], qLeft[-1])
-    boundary_params = compute_params(a, b, grid[-1], grid[-2], grid[-1], qRight[-2], qLeft[-1], f_A, f_B, f_F, F)
-    lambda1, gamma1, mu1, delta1, F1, G1, lambda1p, mu1p, lambda1pp, mu1pp, f_A, f_B, f_F = boundary_params
-
-    U[2*N-3, -2:] = np.array([-lambda1, -mu1])
-    B[2*N-3] = F1
-    B[N-2] -= 1.0
-    B[N-1] -= 1.0
+    K = len(F)
+    x1 = np.zeros((K, int((N+1)/2)), dtype=np.float64)
+    x2 = np.zeros((K, int((N + 1) / 2)), dtype=np.float64)
+    B = np.zeros((K, 2*(N-1)), dtype=np.float64)
+    all_f_rhs = []
+    all_f_AB = []
     
-    M_inverse = np.diag(1 / np.max(np.abs(U), axis=0))
-    # M_inverse = np.eye(U.shape[0])
-    scaled_U = np.matmul(U, M_inverse)
-    AB = np.linalg.solve(scaled_U, B).flatten() # scaled AB
-    start_time = time.time()
-    scaled_AB = np.linalg.solve(scaled_U, B).flatten()
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    print(f"Solving Ux=B time: {elapsed_time:.6f} seconds")
-    def f_AB(x):
-        result = np.array([scaled_AB[0], scaled_AB[1]])
-        for i in range(1, N):
-            result = np.where((grid[i-1] < x) & (x <= grid[i]), scaled_AB[2*(i-1):2*(i-1)+2], result)
-        return result
-    scale = np.diag(M_inverse)
-    scale1 = scale[::2]
-    scale2 = scale[1::2]
-    def scaled_f_A(x):
-        result_f_A = f_A(grid[0])*scale1[0]
-        for i in range(1, N):
-            result_f_A = np.where((grid[i-1] < x) & (x <= grid[i]), f_A(x)*scale1[i-1], result_f_A)
-        return result_f_A
-    def scaled_f_B(x):
-        result_f_B = f_B(grid[0])*scale2[0]
-        for i in range(1, N):
-            result_f_B = np.where((grid[i-1] < x) & (x <= grid[i]), f_B(x)*scale2[i-1], result_f_B)
-        return result_f_B
-    x = np.zeros(N)
-    for i in range(N):
-        x[i] = f_AB(grid[i])[0]*scaled_f_A(grid[i])+f_AB(grid[i])[1]*scaled_f_B(grid[i])+f_F(grid[i])
-        # x[i] = AB[2*(i-1)]*coeff[i][0]+AB[2*(i-1)+1]*coeff[i][1]+coeff[i][2]
-    x1[:] = x[:int((N+1)/2)]
-    x2[:] = x[int((N+1)/2)-1:]
-    x2[0] += 1
-    return x1, x2, scaled_U, B, f_AB, scaled_f_A, scaled_f_B, f_F
+    for k in range(K):
+        U = np.zeros((2*(N-1), 2*(N-1)), dtype=np.float64)
+        each_B = np.zeros((2*(N-1), ), dtype=np.float64)
+        f_A = lambda x: x
+        f_B = lambda x: x
+        each_f_rhs = lambda x: x
+        a, b = compute_coefficients(grid[0], grid[1], qRight[0], qLeft[1])
+        boundary_params = compute_params(a, b, grid[0], grid[0], grid[1], qRight[0], qLeft[1], f_A, f_B, each_f_rhs, F[k])
+        lambda1, gamma1, mu1, delta1, F1, G1, lambda1p, mu1p, lambda1pp, mu1pp, f_A, f_B, each_f_rhs = boundary_params
+        U[0,:2] = np.array([-lambda1, -mu1])
+        each_B[0] = F1
+
+        for i in range(1, 2*N-3, 2):
+            a1, b1 = compute_coefficients(grid[i // 2], grid[i // 2 + 1], qRight[i // 2], qLeft[i // 2 + 1])
+            a2, b2 = compute_coefficients(grid[i // 2 + 1], grid[i // 2 + 2], qRight[i // 2 + 1], qLeft[i // 2 + 2])
+            
+            params1 = compute_params(a1, b1, grid[i // 2 + 1], grid[i // 2], grid[i // 2 + 1], qRight[i // 2], qLeft[i // 2 + 1], f_A, f_B, each_f_rhs, F[k])
+            lambda1, gamma1, mu1, delta1, F1, G1, lambda1p, mu1p, lambda1pp, mu1pp, f_A, f_B, each_f_rhs = params1
+            params2 = compute_params(a2, b2, grid[i // 2 + 1], grid[i // 2 + 1], grid[i // 2 + 2], qRight[i // 2 + 1], qLeft[i // 2 + 2], f_A, f_B, each_f_rhs, F[k])
+            lambda2, gamma2, mu2, delta2, F2, G2, lambda2p, mu2p, lambda2pp, mu2pp, f_A, f_B, each_f_rhs = params2
+
+            each_B[i] = F2 - F1
+            each_B[i+1] = G2 - G1
+            U[i, i-1:i+3] = np.array([lambda1, mu1, -lambda2, -mu2])
+            U[i+1, i - 1:i + 3] = np.array([gamma1, delta1, -gamma2, -delta2])
+
+        a, b = compute_coefficients(grid[-2], grid[-1], qRight[-2], qLeft[-1])
+        boundary_params = compute_params(a, b, grid[-1], grid[-2], grid[-1], qRight[-2], qLeft[-1], f_A, f_B, each_f_rhs, F[k])
+        lambda1, gamma1, mu1, delta1, F1, G1, lambda1p, mu1p, lambda1pp, mu1pp, f_A, f_B, each_f_rhs = boundary_params
+
+        U[2*N-3, -2:] = np.array([-lambda1, -mu1])
+        each_B[2*N-3] = F1
+        each_B[N-2] -= 1.0
+        each_B[N-1] -= 1.0
+
+        
+        M_inverse = np.diag(1 / np.max(np.abs(U), axis=0))
+        # M_inverse = np.eye(U.shape[0])
+        scaled_U = np.matmul(U, M_inverse)
+
+        AB = np.linalg.solve(scaled_U, each_B).flatten() # scaled AB
+        # start_time = time.time()
+        scaled_AB = np.linalg.solve(scaled_U, each_B).flatten()
+        # end_time = time.time()
+        # elapsed_time = end_time - start_time
+        # print(f"Solving Ux=B time: {elapsed_time:.6f} seconds")
+        def f_AB(x):
+            result = np.array([scaled_AB[0], scaled_AB[1]])
+            for i in range(1, N):
+                result = np.where((grid[i-1] < x) & (x <= grid[i]), scaled_AB[2*(i-1):2*(i-1)+2], result)
+            return result
+        scale = np.diag(M_inverse)
+        scale1 = scale[::2]
+        scale2 = scale[1::2]
+        def scaled_f_A(x):
+            result_f_A = f_A(grid[0])*scale1[0]
+            for i in range(1, N):
+                result_f_A = np.where((grid[i-1] < x) & (x <= grid[i]), f_A(x)*scale1[i-1], result_f_A)
+            return result_f_A
+        def scaled_f_B(x):
+            result_f_B = f_B(grid[0])*scale2[0]
+            for i in range(1, N):
+                result_f_B = np.where((grid[i-1] < x) & (x <= grid[i]), f_B(x)*scale2[i-1], result_f_B)
+            return result_f_B
+        x = np.zeros(N)
+        for i in range(N):
+            x[i] = f_AB(grid[i])[0]*scaled_f_A(grid[i])+f_AB(grid[i])[1]*scaled_f_B(grid[i])+each_f_rhs(grid[i])
+            # x[i] = AB[2*(i-1)]*coeff[i][0]+AB[2*(i-1)+1]*coeff[i][1]+coeff[i][2]
+        x1[k, :] = x[:int((N+1)/2)]
+        x2[k, :] = x[int((N+1)/2)-1:]
+        x2[k, 0] += 1
+        B[k, :] = each_B[:]
+        all_f_rhs.append(each_f_rhs)
+        all_f_AB.append(f_AB)
+    
+    return x1, x2, scaled_U, B, all_f_AB, scaled_f_A, scaled_f_B, all_f_rhs
 
 
 class DNN(torch.nn.Module):
@@ -182,12 +194,12 @@ class DNN(torch.nn.Module):
 
 
 class PhysicsInformedNN():
-    def __init__(self, X, U, B, layers):
+    def __init__(self, grid, F, U, B, layers):
         
-        self.x = torch.tensor(X).float().to(device)
+        K = len(F)
+        self.input = torch.tensor(np.array([F[i](grid) for i in range(len(F))])).float().to(device)
         U = torch.tensor(U).float().to(device)
         B = torch.tensor(B).float().to(device)
-
         N = int(U.shape[0]/2)
         self.U = torch.zeros((2*N-2, 2*N+2)).float().to(device)
         self.U_boundary = torch.zeros((2, 2*N+2)).float().to(device)
@@ -198,10 +210,10 @@ class PhysicsInformedNN():
         self.U_boundary[0, :-2] = U[0,:]
         self.U_boundary[-1, 2:] = U[-1,:]
         self.U_interface[:, 2:] = U[N-1:N+1, :]
-        self.B = torch.zeros((2*N-2)).float().to(device)
-        self.B[2:] = torch.cat((B[1:N-1], B[N+1:-1]), dim=0)
-        self.B_interface = B[N-1:N+1]
-        self.B_boundary = torch.stack((B[0], B[-1]))
+        self.B = torch.zeros((K, 2*N-2)).float().to(device)
+        self.B[:, 2:] = torch.cat((B[:, 1:N-1], B[:, N+1:-1]), dim=1)
+        self.B_interface = B[:, N-1:N+1]
+        self.B_boundary = torch.stack((B[:, 0], B[:, -1]), dim=1)
         # self.U = torch.cat((U[1:N-1,:], U[N+1:-1,:]), dim=0)
         # self.U_boundary = torch.stack((U[0,:], U[-1,:]))
         # self.U_interface = U[N-1:N+1, :]
@@ -220,7 +232,7 @@ class PhysicsInformedNN():
             line_search_fn="strong_wolfe"
         )
         self.optimizer = torch.optim.Adam(self.dnn.parameters(), lr=2e-3, weight_decay=1e-4)
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=100, gamma=0.5)
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=200, gamma=0.5)
         self.iter = 0
         self.loss = torch.nn.MSELoss()
         self.loss_history = []
@@ -233,50 +245,18 @@ class PhysicsInformedNN():
         self.gamma_equ = 10.0
         # self.coeff = torch.tensor(coeff).float().to(device)
         # self.coeffpp = torch.tensor(coeffpp).float().to(device)
-
-    # def loss_equ(self):
-    #     q = lambda x: torch.where(x<=0.5, 5.0, 0.1*(4+32*x))
-    #     qh = lambda x: torch.where(x<=0.5, 5.0, 0.1*(4+32*x))
-    #     f = lambda x: x
-    #     AB = self.dnn(self.x)
-    #     u0 = torch.sum(self.coeff[1:-1, :2] * AB[:-1], dim=1)
-    #     upp0 = torch.sum(self.coeffpp[1:-1, :2] * AB[:-1], dim=1)
-    #     # FG = \int F*G, -FG''+qh*FG=F
-    #     # then -FG''+q*FG = -FG''+qh*FG+(q-qh)*FG=F+(q-qh)*FG
-    #     loss = self.loss(upp0, q(self.x[1:-1]).flatten()*u0) + \
-    #         self.loss(qh(self.x[1:-1]).flatten()*self.coeff[1:-1, 2], q(self.x[1:-1]).flatten()*self.coeff[1:-1, 2])
-    #     # loss = self.loss(-upp+q(self.x[:-1]).flatten()*u, f(self.x[:-1]).flatten())
-    #     return loss
-
-    # def loss_func(self):
-    #     self.optimizer.zero_grad()
-    #     AB_pred = self.dnn(self.x)
-    #     AB_pred = AB_pred.flatten()
-    #     loss = self.gamma*self.loss(torch.matmul(self.U, AB_pred), self.B)\
-                    # +self.gamma_boundary*self.loss(torch.matmul(self.U_boundary, AB_pred), self.B_boundary)\
-                    #   + self.gamma_interface*self.loss(torch.matmul(self.U_interface, AB_pred), self.B_interface)
-    #     loss += self.gamma_equ*self.loss_equ()
-    #     loss.backward()
-
-    #     self.loss_history.append(loss.item())
-    #     self.iter += 1
-    #     if (self.iter+1) % 1 == 0:
-    #         print(f'LBFGS optimizer {self.iter}th Loss {loss.item()}')
-    #     return loss
     
     def train(self, nIter1, nIter):
         self.dnn.train()
         for epoch in range(nIter):
             self.optimizer.zero_grad()
-            AB_pred = self.dnn(self.x)
-            AB_pred = AB_pred.flatten()
-            if epoch <= nIter1:
-                loss = self.loss_equ()
-            else:
-                lossContinuous = self.gamma*self.loss(torch.matmul(self.U, AB_pred), self.B)
-                lossBoundary = self.gamma_boundary*self.loss(torch.matmul(self.U_boundary, AB_pred), self.B_boundary)
-                lossJump = self.gamma_interface*self.loss(torch.matmul(self.U_interface, AB_pred), self.B_interface)
-                loss = lossContinuous + lossBoundary + lossJump
+            AB_pred = self.dnn(self.input)
+            # AB_pred = AB_pred.flatten()
+
+            lossContinuous = self.gamma*self.loss(torch.einsum('kj, ij->ki', AB_pred, self.U), self.B)
+            lossBoundary = self.gamma_boundary*self.loss(torch.einsum('kj, ij->ki', AB_pred, self.U_boundary), self.B_boundary)
+            lossJump = self.gamma_interface*self.loss(torch.einsum('kj, ij->ki', AB_pred, self.U_interface), self.B_interface)
+            loss = lossContinuous + lossBoundary + lossJump
             loss.backward()
             self.optimizer.step()
             self.scheduler.step()
@@ -287,15 +267,13 @@ class PhysicsInformedNN():
             self.lossJump_history.append(lossJump.item())
             if (epoch+1) % 100 == 0:
                 print(f'Adam(or SGD) optimizer {epoch}th Loss {loss.item()}')
-        # self.optimizer.step(self.loss_func)
     
-    def predict(self, grid, x, f_A, f_B, f_F, f_AB):
-        # 训练数据集不包括x=0, 测试时输入x=0，得到的pred_AB不能保证pre_u满足边界条件
+    def predict(self, grid, x, f_A, f_B, f_rhs, f_AB, F):
         self.dnn.eval()
-        pred_AB = self.dnn(torch.tensor(grid).float().to(device)).reshape((len(grid),2))
+        input_ = torch.tensor(F(grid)).float().to(device)
+        pred_AB = self.dnn(input_).reshape((-1, 2))
         pred_AB = pred_AB.detach().cpu().numpy()
-        pred_u = np.zeros(len(x))
-        # pred_u[0] = pred_AB[1, 0]*coeff[0][0]+pred_AB[1, 1]*coeff[0][1]+coeff[0][2]
+        pred_u = np.zeros((len(x)))
         A_x, B_x = [], []
         A_x_pred, B_x_pred = [], []
         def f_AB_pred(x):
@@ -304,8 +282,7 @@ class PhysicsInformedNN():
                 result = np.where((grid[i-1] < x) & (x <= grid[i]), pred_AB[i], result)
             return result
         for i in range(len(x)):
-            pred_u[i] = f_AB_pred(x[i])[0]*f_A(x[i])+f_AB_pred(x[i])[1]*f_B(x[i])+f_F(x[i])
-            # pred_u[i] = f_AB(x[i])[0]*f_A(x[i])+f_AB(x[i])[1]*f_B(x[i])+f_F(x[i])
+            pred_u[i] = f_AB_pred(x[i])[0]*f_A(x[i])+f_AB_pred(x[i])[1]*f_B(x[i])+f_rhs(x[i])
             A_x.append(f_AB(x[i])[0])
             A_x_pred.append(f_AB_pred(x[i])[0])
             B_x.append(f_AB(x[i])[1])
@@ -329,38 +306,39 @@ class PhysicsInformedNN():
 N = 11
 q1 = lambda x: 5.0
 q2 = lambda x: 0.1*(4+32*x)
-f = generate(samples=10)
-interpolate_f = interpolate.interp1d(np.linspace(0, 1, N), f)
-F = lambda x: x
-layers = [N, 16, 32, 2*N]
+f = generate(samples=101)  # 前100个作为训练，最后一个做测试
+grid = np.linspace(0, 1, f.shape[-1])
+interpolate_f = interpolate.interp1d(np.linspace(0, 1, f.shape[-1]), f)
+F = [lambda x, k=k: interpolate_f(x)[k] for k in range(f.shape[0])]
+
 
 q = lambda x: np.where(x<=0.5, q1(x), q2(x))
 grid = np.linspace(0, 1, N)
 qLeft, qRight = q(grid), q(grid)
 qRight[int((N-1)/2)] = q2(grid[int((N-1)/2)])
 
-u1, u2, U, B, f_AB, f_A, f_B, f_F = tfpm(grid, qLeft, qRight, F)
-model = PhysicsInformedNN(grid, U, B, layers)
+u1, u2, U, B, f_AB, f_A, f_B, f_rhs = tfpm(grid, qLeft, qRight, F)
+layers = [N, 16, 32, 32, 2*N]
+model = PhysicsInformedNN(grid, F[:-1], U, B[:-1], layers)
 start_time = time.time()
-model.train(-1, 400)
+model.train(-1, 2000)
 end_time = time.time()
 elapsed_time = end_time - start_time
 print(f"Training time: {elapsed_time:.6f} seconds")
 
 N_fine = 101
 grid_fine = np.linspace(0, 1, N_fine)
-prediction = model.predict(grid, grid_fine, f_A, f_B, f_F, f_AB)
-
+prediction = model.predict(grid, grid_fine, f_A, f_B, f_rhs[-1], f_AB[-1], F[-1])
 q = lambda x: np.where(x<=0.5, q1(x), q2(x))
 grid = np.linspace(0, 1, N_fine)
 qLeft, qRight = q(grid), q(grid)
 qRight[int((N_fine-1)/2)] = q2(grid[int((N_fine-1)/2)])
-u1, u2, U, B, f_AB, f_A, f_B, f_F = tfpm(grid, qLeft, qRight, F)
-print(f'test error on grid with resolution {N_fine}: {1/N_fine*np.sum(np.abs(prediction-np.concatenate((u1, u2[1:]))))}')
+u1, u2, U, B, f_AB, f_A, f_B, f_rhs = tfpm(grid, qLeft, qRight, F[-1:])
+print(f'test error on grid with resolution {N_fine}: {1/N_fine*np.sum(np.abs(prediction-np.concatenate((u1.flatten(), u2[:, 1:].flatten()))))}')
 fig = plt.figure(figsize=(7, 3), dpi=150)
 plt.subplot(1, 2, 1)
-plt.plot(grid_fine[:int(N_fine/2+1)], u1, 'r-', label='Ground Truth', alpha=1., zorder=0)
-plt.plot(grid_fine[int(N_fine/2+1):], u2[1:], 'r-', alpha=1., zorder=0)
+plt.plot(grid_fine[:int(N_fine/2+1)], u1.flatten(), 'r-', label='Ground Truth', alpha=1., zorder=0)
+plt.plot(grid_fine[int(N_fine/2+1):], u2[:, 1:].flatten(), 'r-', alpha=1., zorder=0)
 plt.plot(grid_fine[:int(N_fine/2+1)], prediction[:int(N_fine/2+1)], 'b-', label='prediction', alpha=1., zorder=0)
 plt.plot(grid_fine[int(N_fine/2+1):], prediction[int(N_fine/2+1):], 'b-', alpha=1., zorder=0)
 plt.legend(loc='best')
