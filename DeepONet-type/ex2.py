@@ -5,7 +5,7 @@ from collections import OrderedDict
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.special import airy
-from scipy.integrate import quad
+from scipy.integrate import quad, romb
 from math import sqrt
 from scipy import interpolate
 from generate_f import generate
@@ -59,7 +59,7 @@ def compute_params(a, b, x, x1, x2, y1, y2, f_A_default, f_B_default, f_rhs_defa
             lamda_pp, mu_pp = b * np.exp(x * sqrt_b), b * np.exp(-x * sqrt_b)
             f_A = lambda x: np.where((x1<x) & (x<=x2), np.exp(sqrt_b * x), f_A_default(x))
             f_B = lambda x: np.where((x1<x) & (x<=x2), np.exp(-sqrt_b * x), f_B_default(x))
-            f_rhs = lambda x: np.where((x1<x) & (x<=x2), quad(integrand_sinh, x1, x2, args=(x, F, b))[0], f_rhs_default(x))
+            f_rhs = lambda x: np.where((x1<x) & (x<=x2), quad(integrand_sinh, x1, x2, args=(x, F, b), limit=100)[0], f_rhs_default(x))
     else:
         z, z1, z2 = y * np.power(np.abs(a), -2 / 3), y1 * np.power(np.abs(a), -2 / 3), y2 * np.power(np.abs(a), -2 / 3)
         lamda, gamma, mu, delta = airy(z)
@@ -71,7 +71,7 @@ def compute_params(a, b, x, x1, x2, y1, y2, f_A_default, f_B_default, f_rhs_defa
         f_z = lambda x: (a*x+b) * np.power(np.abs(a), -2 / 3)
         f_A = lambda x: np.where((x1<x) & (x<=x2), airy(f_z(x))[0], f_A_default(x))
         f_B = lambda x: np.where((x1<x) & (x<=x2), airy(f_z(x))[2], f_B_default(x))
-        f_rhs_x = lambda x: quad(integrand_airy, z1, z2, args=(f_z(x), F, a, b))[0] if z2 >= z1 else quad(integrand_airy, z2, z1, args=(f_z(x), F, a, b))[0]
+        f_rhs_x = lambda x: quad(integrand_airy, z1, z2, args=(f_z(x), F, a, b), limit=100)[0] if z2 >= z1 else quad(integrand_airy, z2, z1, args=(f_z(x), F, a, b), limit=100)[0]
         f_rhs = lambda x: np.where((x1<x) & (x<=x2), f_rhs_x(x), f_rhs_default(x))
     if x == grid[0]:
         f_A = lambda x: np.where(x==x1, lamda, f_A_default(x))
@@ -214,12 +214,7 @@ class PhysicsInformedNN():
         self.B[:, 2:] = torch.cat((B[:, 1:N-1], B[:, N+1:-1]), dim=1)
         self.B_interface = B[:, N-1:N+1]
         self.B_boundary = torch.stack((B[:, 0], B[:, -1]), dim=1)
-        # self.U = torch.cat((U[1:N-1,:], U[N+1:-1,:]), dim=0)
-        # self.U_boundary = torch.stack((U[0,:], U[-1,:]))
-        # self.U_interface = U[N-1:N+1, :]
-        # self.B = torch.cat((B[1:N-1], B[N+1:-1]), dim=0)
-        # self.B_interface = B[N-1:N+1]
-        # self.B_boundary = torch.stack((B[0], B[-1]))
+        self.train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(self.input, self.B, self.B_boundary, self.B_interface), batch_size=16, shuffle=True)
         self.dnn = DNN(layers).to(device)
         self.optimizer = torch.optim.LBFGS(
             self.dnn.parameters(), 
@@ -232,7 +227,7 @@ class PhysicsInformedNN():
             line_search_fn="strong_wolfe"
         )
         self.optimizer = torch.optim.Adam(self.dnn.parameters(), lr=2e-3, weight_decay=1e-4)
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=200, gamma=0.5)
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=500, gamma=0.5)
         self.iter = 0
         self.loss = torch.nn.MSELoss()
         self.loss_history = []
@@ -249,16 +244,15 @@ class PhysicsInformedNN():
     def train(self, nIter1, nIter):
         self.dnn.train()
         for epoch in range(nIter):
-            self.optimizer.zero_grad()
-            AB_pred = self.dnn(self.input)
-            # AB_pred = AB_pred.flatten()
-
-            lossContinuous = self.gamma*self.loss(torch.einsum('kj, ij->ki', AB_pred, self.U), self.B)
-            lossBoundary = self.gamma_boundary*self.loss(torch.einsum('kj, ij->ki', AB_pred, self.U_boundary), self.B_boundary)
-            lossJump = self.gamma_interface*self.loss(torch.einsum('kj, ij->ki', AB_pred, self.U_interface), self.B_interface)
-            loss = lossContinuous + lossBoundary + lossJump
-            loss.backward()
-            self.optimizer.step()
+            for (input, B, B_boundary, B_interface) in self.train_loader:
+                self.optimizer.zero_grad()
+                AB_pred = self.dnn(input)
+                lossContinuous = self.gamma*self.loss(torch.einsum('kj, ij->ki', AB_pred, self.U), B)
+                lossBoundary = self.gamma_boundary*self.loss(torch.einsum('kj, ij->ki', AB_pred, self.U_boundary), B_boundary)
+                lossJump = self.gamma_interface*self.loss(torch.einsum('kj, ij->ki', AB_pred, self.U_interface), B_interface)
+                loss = lossContinuous + lossBoundary + lossJump
+                loss.backward()
+                self.optimizer.step()
             self.scheduler.step()
 
             self.loss_history.append(loss.item())
@@ -303,9 +297,9 @@ class PhysicsInformedNN():
         return pred_u
 
 
-N = 11
-q1 = lambda x: 5.0
-q2 = lambda x: 0.1*(4+32*x)
+N = 15  # must be odd
+q1 = lambda x: 5000.0
+q2 = lambda x: 100.0*(4+32*x)
 f = generate(samples=101)  # 前100个作为训练，最后一个做测试
 grid = np.linspace(0, 1, f.shape[-1])
 interpolate_f = interpolate.interp1d(np.linspace(0, 1, f.shape[-1]), f)
@@ -317,13 +311,13 @@ grid = np.linspace(0, 1, N)
 qLeft, qRight = q(grid), q(grid)
 qRight[int((N-1)/2)] = q2(grid[int((N-1)/2)])
 
-N_f = 64
+N_f = 15
 grid_f = np.linspace(0, 1, N_f)
 u1, u2, U, B, f_AB, f_A, f_B, f_rhs = tfpm(grid, qLeft, qRight, F)
-layers = [N_f, 16, 32, 32, 2*N]
+layers = [N_f, 64, 64, 64, 2*N]
 model = PhysicsInformedNN(grid_f, F[:-1], U, B[:-1], layers)
 start_time = time.time()
-model.train(-1, 2000)
+model.train(-1, 4000)
 end_time = time.time()
 elapsed_time = end_time - start_time
 print(f"Training time: {elapsed_time:.6f} seconds")
