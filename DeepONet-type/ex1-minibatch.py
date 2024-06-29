@@ -214,6 +214,7 @@ class PhysicsInformedNN():
         self.B[:, 2:] = torch.cat((B[:, 1:N-1], B[:, N+1:-1]), dim=1)
         self.B_interface = B[:, N-1:N+1]
         self.B_boundary = torch.stack((B[:, 0], B[:, -1]), dim=1)
+        self.train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(self.input, self.B, self.B_boundary, self.B_interface), batch_size=32, shuffle=True)
         # self.U = torch.cat((U[1:N-1,:], U[N+1:-1,:]), dim=0)
         # self.U_boundary = torch.stack((U[0,:], U[-1,:]))
         # self.U_interface = U[N-1:N+1, :]
@@ -249,22 +250,26 @@ class PhysicsInformedNN():
     def train(self, nIter1, nIter):
         self.dnn.train()
         for epoch in range(nIter):
-            self.optimizer.zero_grad()
-            AB_pred = self.dnn(self.input)
-            # AB_pred = AB_pred.flatten()
-
-            lossContinuous = self.gamma*self.loss(torch.einsum('kj, ij->ki', AB_pred, self.U), self.B)
-            lossBoundary = self.gamma_boundary*self.loss(torch.einsum('kj, ij->ki', AB_pred, self.U_boundary), self.B_boundary)
-            lossJump = self.gamma_interface*self.loss(torch.einsum('kj, ij->ki', AB_pred, self.U_interface), self.B_interface)
-            loss = lossContinuous + lossBoundary + lossJump
-            loss.backward()
-            self.optimizer.step()
+            each_loss, each_loss_c, each_loss_b, each_loss_j = 0, 0, 0, 0
+            for (input, B, B_boundary, B_interface) in self.train_loader:
+                self.optimizer.zero_grad()
+                AB_pred = self.dnn(input)
+                lossContinuous = self.gamma*self.loss(torch.einsum('kj, ij->ki', AB_pred, self.U), B)
+                lossBoundary = self.gamma_boundary*self.loss(torch.einsum('kj, ij->ki', AB_pred, self.U_boundary), B_boundary)
+                lossJump = self.gamma_interface*self.loss(torch.einsum('kj, ij->ki', AB_pred, self.U_interface), B_interface)
+                loss = lossContinuous + lossBoundary + lossJump
+                loss.backward()
+                self.optimizer.step()
+                each_loss += loss.item()
+                each_loss_c += lossContinuous.item()
+                each_loss_b += lossBoundary.item()
+                each_loss_j += lossJump.item()
             self.scheduler.step()
 
-            self.loss_history.append(loss.item())
-            self.lossContinuos_history.append(lossContinuous.item())
-            self.lossBoundary_history.append(lossBoundary.item())
-            self.lossJump_history.append(lossJump.item())
+            self.loss_history.append(each_loss)
+            self.lossContinuos_history.append(each_loss_c)
+            self.lossBoundary_history.append(each_loss_b)
+            self.lossJump_history.append(each_loss_j)
             if (epoch+1) % 100 == 0:
                 print(f'Adam(or SGD) optimizer {epoch}th Loss {loss.item()}')
     
@@ -301,7 +306,6 @@ class PhysicsInformedNN():
         plt.legend()
         # plt.show()
         return pred_u
-
 
 N = 11
 q1 = lambda x: 5.0
