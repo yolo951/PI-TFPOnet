@@ -136,10 +136,24 @@ class TFPM2d:
             print('two',a21,a22,a23,a24)
             print('three',a31,a32,a33,a34)
             print('four',a41,a42,a43,a44)
-        c_sum = (u1-a0_ij)*(np.exp(a11)+np.exp(a21)-np.exp(a31)-np.exp(a41)) + (u2-a0_ij)*(-np.exp(a12)-np.exp(a22)+np.exp(a32)+np.exp(a42)) + (u3-a0_ij)*(np.exp(a13)+np.exp(a23)-np.exp(a33)-np.exp(a43)) + (u4-a0_ij)*(-np.exp(a14)-np.exp(a24)+np.exp(a34)+np.exp(a44))
+        exp_a_1141 = np.exp(a11) - np.exp(a41) if abs(a11-a41)>1e-10 else 0.0
+        exp_a_2131 = np.exp(a21) - np.exp(a31) if abs(a21-a31)>1e-10 else 0.0
+        exp_a_1242 = np.exp(a12) - np.exp(a42) if abs(a12-a42)>1e-10 else 0.0
+        exp_a_2232 = np.exp(a22) - np.exp(a32) if abs(a22-a32)>1e-10 else 0.0
+        exp_a_1343 = np.exp(a13) - np.exp(a43) if abs(a13-a43)>1e-10 else 0.0
+        exp_a_2333 = np.exp(a23) - np.exp(a33) if abs(a23-a33)>1e-10 else 0.0
+        exp_a_1444 = np.exp(a14) - np.exp(a44) if abs(a14-a44)>1e-10 else 0.0
+        exp_a_2434 = np.exp(a24) - np.exp(a34) if abs(a24-a34)>1e-10 else 0.0
+
+        c_sum = (u1-a0_ij)*(exp_a_1141+exp_a_2131) + (u2-a0_ij)*(-exp_a_1242-exp_a_2232) + (u3-a0_ij)*(exp_a_1343+exp_a_2333) + (u4-a0_ij)*(-exp_a_1444-exp_a_2434)
         c_sum = c_sum / (1 + np.exp(-2*sqrt2*mu0_ij*h) - 2*np.exp(-sqrt2*mu0_ij*h))
         
-        
+        if abs(c_sum)>=1:
+            print(c_sum, x,y)
+            print('one',a11,a12,a13,a14)
+            print('two',a21,a22,a23,a24)
+            print('three',a31,a32,a33,a34)
+            print('four',a41,a42,a43,a44)
         u_h_val = a0_ij + c_sum
         
         return u_h_val
@@ -150,41 +164,43 @@ class TFPM2d:
         vectorized_u_h = np.vectorize(self.recovery_each)
         return vectorized_u_h(x, y)
 
-N = 3
+N = 50
 x = np.linspace(0, 1, N+1)
 y = np.linspace(0, 1, N+1)
 xx, yy = np.meshgrid(x, y)
-eps = sqrt(0.001)
-p = np.vectorize(lambda x, y: 1.0)
-q = np.vectorize(lambda x, y: 0.0)
-b = np.vectorize(lambda x, y: 1.0)
-f = np.vectorize(lambda x, y: (2*eps**2+y*(1-y))*(np.exp((x-1)/eps**2)+(x-1)*np.exp(-1/eps**2)-x)+y*(1-y)*(np.exp(-1/eps**2)-1))
+eps = 0.001
+p = np.vectorize(lambda x, y: x)
+q = np.vectorize(lambda x, y: x)
+b = np.vectorize(lambda x, y: 1.0+x+y)
+f = np.vectorize(lambda x, y: np.sin(np.pi*(x+y)))
 p_val = p(xx, yy)
 q_val = q(xx, yy)
 b_val = b(xx, yy)
 f_val = f(xx, yy)
 
 u_approx = TFPM_get_discrete_u(N, p_val, q_val, b_val, f_val, eps)
-u_exact = yy*(1-yy)*(np.exp((xx-1)/eps**2)+(xx-1)*np.exp(-1/eps**2)-xx)
+# u_exact = yy*(1-yy)*(np.exp((xx-1)/eps**2)+(xx-1)*np.exp(-1/eps**2)-xx)
+# print(np.max(np.abs(u_approx-u_exact)))
 
-print(np.max(np.abs(u_approx-u_exact)))
-
-Nh = 4
+Nh = 200
 xh = np.linspace(0, 1, Nh+1)
 yh = np.linspace(0, 1, Nh+1)
 xxh, yyh = np.meshgrid(xh, yh)
-u_exact_h = yyh*(1-yyh)*(np.exp((xxh-1)/eps**2)+(xxh-1)*np.exp(-1/eps**2)-xxh)
+# u_exact_h = yyh*(1-yyh)*(np.exp((xxh-1)/eps**2)+(xxh-1)*np.exp(-1/eps**2)-xxh)
 tfpm2d = TFPM2d(u_approx, N, p, q, b, f, eps)
 u_recovery = tfpm2d.recovery(xxh, yyh)
-print(np.max(np.abs(u_recovery-u_exact_h)))
-
+# print(np.max(np.abs(u_recovery-u_exact_h)))
+# print('exact:', u_exact)
+# print('recovery:', u_recovery)
 
 
 fig = plt.figure()
 axs1 = fig.add_subplot(121, projection='3d')
-axs1.plot_surface(xxh, yyh, u_recovery, cmap='rainbow', label='approximation')
+axs1.set_title(f'recovery solution N={Nh}')
+axs1.plot_surface(xxh, yyh, u_recovery, cmap='rainbow', label='recovery')
 axs1.view_init(elev=-10., azim=30)
 axs2 = fig.add_subplot(122, projection='3d')
-axs2.plot_surface(xx, yy, u_exact, cmap='rainbow', label='exact')
+axs2.set_title(f'approximation solution N={N}')
+axs2.plot_surface(xx, yy, u_approx, cmap='rainbow', label='approximation')
 axs2.view_init(elev=-10., azim=30)
 plt.show()

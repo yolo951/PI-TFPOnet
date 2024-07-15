@@ -298,12 +298,13 @@ class PhysicsInformedNN():
 
 
 N = 15  # must be odd
+# -eps*u'' + q*u = f <==> -u'' + 1/eps*q*u = 1/eps*f
 q1 = lambda x: 5.0*1000
 q2 = lambda x: 0.1*(4+32*x)*1000
 f = generate(samples=101)  # 前100个作为训练，最后一个做测试
 grid = np.linspace(0, 1, f.shape[-1])
 interpolate_f = interpolate.interp1d(np.linspace(0, 1, f.shape[-1]), f)
-F = [lambda x, k=k: interpolate_f(x)[k] for k in range(f.shape[0])]
+F = [lambda x, k=k: 1000*interpolate_f(x)[k] for k in range(f.shape[0])]
 
 
 q = lambda x: np.where(x<=0.5, q1(x), q2(x))
