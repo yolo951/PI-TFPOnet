@@ -174,7 +174,8 @@ with torch.no_grad():
     plt.legend(loc='best')
     plt.tight_layout()
     plt.savefig('1d_smooth_example')
-    print('test error on high resolution: MSE = ', np.linalg.norm(pred-u_test) / np.linalg.norm(u_test))
+    print('test error on high resolution: relative L2 norm = ', np.linalg.norm(pred-u_test) / np.linalg.norm(u_test))
+    print('test error on high resolution: relative L_inf norm = ', np.linalg.norm(pred-u_test, ord=np.inf) / np.linalg.norm(u_test))
     
 
 
