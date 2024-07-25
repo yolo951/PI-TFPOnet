@@ -203,7 +203,7 @@ def tfpm2d(N,f):
     return U, B, C, up
 
 N = 10
-ntrain = 1000  
+ntrain = 100
 ntest = 200
 ntotal = ntrain + ntest
 alpha = 1 #interface jump
@@ -212,7 +212,7 @@ eps = 1.001
 f = generate(samples = ntotal, out_dim=N, length_scale=1)
 f = 1. + 0.1*f #训练和测试的f差别小一点
 
-epochs = 20000
+epochs = 10000
 learning_rate = 0.001
 batch_size = 10
 step_size = 2000
@@ -292,7 +292,7 @@ for i in range(epochs):
         loss_jump = mseloss(torch.einsum('bri, bi->br', U_jump, Cb_pred), B_jump)
         loss_continuous = mseloss(torch.einsum('bri, bi->br', U_continuous, Cb_pred), B_continuous)
         loss_boundary = mseloss(torch.einsum('bri, bi->br', U_boundary, Cb_pred), B_boundary)
-        loss = 1*loss_jump + 100*loss_continuous +1000*loss_boundary
+        loss = 1.0*loss_jump + 1.0*loss_continuous +10.0*loss_boundary
         #loss = 100*mseloss(Cb,Cb_pred) #监督学习测试用
         loss.backward()                  
         optimizer.step()  
@@ -362,6 +362,8 @@ print('relative l2 error on test data: ',rel_l2)
 M = 10 #放大倍数
 u_refine = np.zeros((M*N+1,M*N+1))
 hh = 1/(M*N)
+C_pred = model(f_train).detach().cpu()
+C = C_pred[-1] 
 for i in range(0,N):
     for j in range(0,N):
         x0 = (2*i+1)/(2*N)

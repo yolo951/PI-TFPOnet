@@ -141,11 +141,11 @@ def tfpm(grid, qLeft, qRight, F):
         each_B[N-1] -= 1.0
 
         
-        M_inverse = np.diag(10000.0 / np.max(np.abs(U), axis=0))
+        M_inverse = np.diag(50.0 / np.max(np.abs(U), axis=0))
         # M_inverse = np.eye(U.shape[0])
 
-        scaled_U = np.matmul(U, M_inverse)/1000.0
-        each_B = each_B/1000.0
+        scaled_U = np.matmul(U, M_inverse)
+        # each_B = each_B/10000.0
 
         AB = np.linalg.solve(scaled_U, each_B).flatten() # scaled AB
         scaled_AB = np.linalg.solve(scaled_U, each_B).flatten()
@@ -206,10 +206,10 @@ class DNN(torch.nn.Module):
 
 
 class PhysicsInformedNN():
-    def __init__(self, grid, f, U, B, layers):
+    def __init__(self, f, U, B, layers, test_x, test_f_A, test_f_B, test_f_rhs, test_u, test_f):
         
         K = f.shape[0]
-        self.input = torch.tensor(f/10000.0).float().to(device)
+        self.input = torch.tensor(f/1000.0).float().to(device)
         U = torch.tensor(U).float().to(device)
         B = torch.tensor(B).float().to(device)
         N = int(U.shape[0]/2)
@@ -217,8 +217,8 @@ class PhysicsInformedNN():
         self.U_boundary = torch.zeros((2, 2*N+2)).float().to(device)
         self.U_interface = torch.zeros((2, 2*N+2)).float().to(device)
         self.U[2:, 2:] = torch.cat((U[1:N-1,:], U[N+1:-1,:]), dim=0)
-        self.U[0, :3] = torch.tensor([1.0, 0.0, -1.0])
-        self.U[1, 1:4] = torch.tensor([1.0, 0.0, -1.0])
+        self.U[0, :3] = torch.tensor([5.0, 0.0, -5.0])  # 由于U的列被人为放大了，即np.max(U)=10, 这里不能再写成1，否则第一个区间不容易优化
+        self.U[1, 1:4] = torch.tensor([5.0, 0.0, -5.0])
         self.U_boundary[0, :-2] = U[0,:]
         self.U_boundary[-1, 2:] = U[-1,:]
         self.U_interface[:, 2:] = U[N-1:N+1, :]
@@ -226,13 +226,13 @@ class PhysicsInformedNN():
         self.B[:, 2:] = torch.cat((B[:, 1:N-1], B[:, N+1:-1]), dim=1)
         self.B_interface = B[:, N-1:N+1]
         self.B_boundary = torch.stack((B[:, 0], B[:, -1]), dim=1)
+        self.test_x = test_x
+        self.test_f_A = test_f_A
+        self.test_f_B = test_f_B
+        self.test_f_rhs = test_f_rhs
+        self.test_u = test_u
+        self.test_f = test_f
         self.train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(self.input, self.B, self.B_boundary, self.B_interface), batch_size=32, shuffle=True)
-        # self.U = torch.cat((U[1:N-1,:], U[N+1:-1,:]), dim=0)
-        # self.U_boundary = torch.stack((U[0,:], U[-1,:]))
-        # self.U_interface = U[N-1:N+1, :]
-        # self.B = torch.cat((B[1:N-1], B[N+1:-1]), dim=0)
-        # self.B_interface = B[N-1:N+1]
-        # self.B_boundary = torch.stack((B[0], B[-1]))
         self.dnn = DNN(layers).to(device)
         self.optimizer = torch.optim.LBFGS(
             self.dnn.parameters(), 
@@ -245,22 +245,23 @@ class PhysicsInformedNN():
             line_search_fn="strong_wolfe"
         )
         self.optimizer = torch.optim.Adam(self.dnn.parameters(), lr=2e-3, weight_decay=1e-4)
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=200, gamma=0.5)
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=400, gamma=0.5)
         self.iter = 0
         self.loss = torch.nn.MSELoss()
         self.loss_history = []
-        self.lossContinuos_history = []
-        self.lossJump_history = []
-        self.lossBoundary_history = []
-        self.gamma = 100.0
-        self.gamma_interface = 1.0
-        self.gamma_boundary = 100.0
+        self.test_error_history = []
+        self.gamma = 10.0
+        self.gamma_interface = 0.1
+        self.gamma_boundary = 1.0
         self.gamma_equ = 10.0
-        # self.coeff = torch.tensor(coeff).float().to(device)
-        # self.coeffpp = torch.tensor(coeffpp).float().to(device)
+        
     
-    def train(self, nIter1, nIter):
+    def train(self, nIter):
         self.dnn.train()
+        train_mse = 0.
+        test_pred = self.predict(self.test_x, self.test_f_A, self.test_f_B, self.test_f_rhs, self.test_f)
+        test_error = np.linalg.norm(test_pred-self.test_u) / np.linalg.norm(self.test_u)
+        self.test_error_history.append(test_error)
         for epoch in range(nIter):
             for (input, B, B_boundary, B_interface) in self.train_loader:
                 self.optimizer.zero_grad()
@@ -271,53 +272,62 @@ class PhysicsInformedNN():
                 loss = lossContinuous + lossBoundary + lossJump
                 loss.backward()
                 self.optimizer.step()
+                train_mse += loss.item()
+            
             self.scheduler.step()
+            train_mse /= len(self.train_loader)
+            
 
             self.loss_history.append(loss.item())
             if (epoch+1) % 100 == 0:
-                print(f'Adam(or SGD) optimizer {epoch}th Loss {loss.item()}')
+                test_pred = self.predict(self.test_x, self.test_f_A, self.test_f_B, self.test_f_rhs, self.test_f)
+                test_error = np.linalg.norm(test_pred-self.test_u) / np.linalg.norm(self.test_u)
+                self.test_error_history.append(test_error)
+                print(f'Epoch: {epoch},  Loss {train_mse}, test error {test_error}')
+                # print(f'Epoch: {epoch},  Loss {train_mse}')
     
-    def predict(self, grid_f, grid_coarse, x, f_A, f_B, f_rhs, f_AB, f):
-        self.dnn.eval()
+    def predict(self, x, f_A, f_B, f_rhs, f, f_AB=None):
+        # self.dnn.eval()
         K = f.shape[0]
-        input_ = torch.tensor(f/10000.0).float().to(device)
+        input_ = torch.tensor(f/1000.0).float().to(device)
         pred_AB = self.dnn(input_).reshape((K, -1, 2))
         pred_AB = pred_AB.detach().cpu().numpy()
         pred_u = np.zeros((K, len(x)))
         h = 1/(len(f_A)-1)
         for k in range(K):
-            A_x, B_x = [], []
-            A_x_pred, B_x_pred = [], []
+            # A_x, B_x = [], []
+            # A_x_pred, B_x_pred = [], []
 
             for i in range(len(x)):
                 idx = int((x[i]-h**2)//h)+1 if x[i]>0 else 0
                 pred_u[k, i] = pred_AB[k, idx, 0]*f_A[idx](x[i])+pred_AB[k, idx, 1]*f_B[idx](x[i])+f_rhs[k][idx](x[i])
-                A_x.append(f_AB[k][idx][0])
-                A_x_pred.append(pred_AB[k, idx, 0])
-                B_x.append(f_AB[k][idx][1])
-                B_x_pred.append(pred_AB[k, idx, 1])
+        #         A_x.append(f_AB[k][idx][0])
+        #         A_x_pred.append(pred_AB[k, idx, 0])
+        #         B_x.append(f_AB[k][idx][1])
+        #         B_x_pred.append(pred_AB[k, idx, 1])
 
-        fig = plt.figure(figsize=(7, 3), dpi=150)
-        plt.subplot(1, 2, 1)
-        plt.plot(x, A_x, label='ground truth')
-        plt.plot(x, A_x_pred, label='prediction')
-        plt.title('A(x)')
+        # fig = plt.figure(figsize=(7, 3), dpi=150)
+        # plt.subplot(1, 2, 1)
+        # plt.plot(x, A_x, label='ground truth')
+        # plt.plot(x, A_x_pred, label='prediction')
+        # plt.title('A(x)')
 
-        plt.subplot(1, 2, 2)
-        plt.plot(x, B_x, label='ground truth')
-        plt.plot(x, B_x_pred, label='prediction')
-        plt.title('B(x)')
-        plt.legend()
+        # plt.subplot(1, 2, 2)
+        # plt.plot(x, B_x, label='ground truth')
+        # plt.plot(x, B_x_pred, label='prediction')
+        # plt.title('B(x)')
+        # plt.legend()
         # plt.show()
         return pred_u
 
 N = 33
-ntrain, ntest = 100, 2
-q1 = lambda x: 5.0*10000.0
-q2 = lambda x: 0.1*(4+32*x)*10000.0
-f = generate(samples=101, out_dim=N)
-f = 10000.0*(1+0.1*f)
-# np.save('f.npy', f)
+epochs = 3000
+ntrain, ntest = 1000, 200
+q1 = lambda x: (2*x+1)*1000.0
+q2 = lambda x: 2*(1-x)+1
+f = generate(samples=ntrain+ntest, out_dim=N)
+np.save('f.npy', f)
+f[:, :int(N/2+1)] *= 1000.0
 # f = np.load('f.npy')
 grid = np.linspace(0, 1, f.shape[-1])
 # interpolate_f = interpolate.interp1d(np.linspace(0, 1, f.shape[-1]), f)
@@ -332,8 +342,11 @@ qRight[int((N-1)/2)] = q2(grid[int((N-1)/2)])
 N_f = N
 grid_f = np.linspace(0, 1, N_f)
 u1, u2, U, B, f_AB, f_A, f_B, f_rhs = tfpm(grid, qLeft, qRight, f)
-# np.save('u1.npy', u1)
-# np.save('u2.npy', u2)
+N_fine = 257
+grid_fine = np.linspace(0, 1, N_fine)
+
+np.save('u1.npy', u1)
+np.save('u2.npy', u2)
 # np.save('U.npy', U)
 # np.save('B.npy', B)
 # np.save('f_AB.npy', f_AB)
@@ -354,26 +367,29 @@ u1, u2, U, B, f_AB, f_A, f_B, f_rhs = tfpm(grid, qLeft, qRight, f)
 #     f_B = dill.load(ff)
 # with open('f_rhs.pkl', 'rb') as ff:
 #     f_rhs = dill.load(ff)
-layers = [N_f, 64, 128, 64, 64, 2*N]
-model = PhysicsInformedNN(grid_f, f[:-1], U, B[:-1], layers)
+u1_test, u2_test = u1[-ntest:], u2[-ntest:]
+u_test = recovery(grid_fine, f_A, f_B, f_rhs[-ntest:], f_AB[-ntest:])
+np.save('u_test.npy', u_test)
+layers = [N_f, 64, 64, 64, 2*N]
+model = PhysicsInformedNN(f[:-1], U, B[:-1], layers, grid_fine, f_A, f_B, f_rhs[-ntest:], u_test, f[-ntest:])
 start_time = time.time()
-model.train(-1, 2000)
+model.train(epochs)
 end_time = time.time()
 elapsed_time = end_time - start_time
 print(f"Training time: {elapsed_time:.6f} seconds")
+torch.save(model.dnn.state_dict(), 'model.pt')
+np.save('loss_history.npy', model.loss_history)
+np.save('test_error_history.npy', model.test_error_history)
 
-N_fine = 257
-grid_fine = np.linspace(0, 1, N_fine)
-prediction = model.predict(grid_f, grid, grid_fine, f_A, f_B, f_rhs[-ntest:], f_AB[-ntest:], f[-ntest:])
+model.dnn.eval()
+prediction = model.predict(grid_fine, f_A, f_B, f_rhs[-ntest:], f[-ntest:], f_AB=f_AB[-ntest:])
 q = lambda x: np.where(x<=0.5, q1(x), q2(x))
-grid = np.linspace(0, 1, N_fine)
-qLeft, qRight = q(grid), q(grid)
-qRight[int((N_fine-1)/2)] = q2(grid[int((N_fine-1)/2)])
-u1_test, u2_test = u1[-ntest:], u2[-ntest:]
+qLeft, qRight = q(grid_fine), q(grid_fine)
+qRight[int((N_fine-1)/2)] = q2(grid_fine[int((N_fine-1)/2)])
 
-u_test = recovery(grid, f_A, f_B, f_rhs[-ntest:], f_AB[-ntest:])
 
-print(f'test error on grid with resolution {N_fine}: {np.linalg.norm(prediction-u_test) / np.linalg.norm(u_test)}')
+print('test error on high resolution: relative L2 norm = ', np.linalg.norm(prediction-u_test) / np.linalg.norm(u_test))
+print('test error on high resolution: relative L_inf norm = ', np.linalg.norm(prediction-u_test, ord=np.inf) / np.linalg.norm(u_test, ord=np.inf))
 fig = plt.figure(figsize=(7, 3), dpi=150)
 plt.subplot(1, 2, 1)
 plt.plot(grid_fine[:int(N_fine/2+1)], u_test[-ntest, :int(N_fine/2+1)].flatten(), 'r-', label='Ground Truth', alpha=1., zorder=0)
@@ -387,7 +403,9 @@ plt.grid()
 
 plt.subplot(1, 2, 2)
 plt.title("training loss")
-plt.plot(model.loss_history, label='total loss')
+plt.plot(np.arange(0, epochs), model.loss_history, label='total loss')
+plt.plot(np.arange(0, epochs+1, 100), model.test_error_history, label='test error')
+plt.legend()
 plt.yscale("log")
 plt.xlabel("epoch")
 
@@ -396,88 +414,38 @@ plt.show(block=True)
 
 
 
-# N = 33  # must be odd
-# ntrain, ntest = 1000, 200
-# # -eps*u'' + q*u = f <==> -u'' + 1/eps*q*u = 1/eps*f
-# q1 = lambda x: 5.0*1000
-# q2 = lambda x: 0.1*(4+32*x)*1000
-# # f = generate(samples=ntrain+ntest, out_dim=N)
-
-# f = np.load('f.npy')
-# # interpolate_f = interpolate.interp1d(np.linspace(0, 1, f.shape[-1]), f)
-# # F = [lambda x, k=k: interpolate_f(x)[k] for k in range(f.shape[0])]
+fig = plt.figure(figsize=(4, 3), dpi=150)
+plt.plot(np.arange(0, epochs), model.loss_history)
+plt.yscale("log")
+plt.xlabel("epochs")
+plt.tight_layout()
+plt.savefig('1d_high_constrast_loss')
 
 
-# q = lambda x: np.where(x<=0.5, q1(x), q2(x))
-# grid = np.linspace(0, 1, N)
-# qLeft, qRight = q(grid), q(grid)
-# qRight[int((N-1)/2)] = q2(grid[int((N-1)/2)])
+fig = plt.figure(figsize=(4, 3), dpi=150)
+plt.plot(np.arange(0, epochs+1, 100), model.test_error_history, '-*')
+plt.yscale("log")
+plt.xlabel("epochs")
+plt.tight_layout()
+plt.savefig('1d_high_constrast_error')
+plt.show()
 
-# N_f = 33
-# grid_f = np.linspace(0, 1, N_f)
-# # u1, u2, U, B, f_AB, f_A, f_B, f_rhs = tfpm(grid, qLeft, qRight, f)
-# # save data and piecewise function, obtain these tooo slow
-# # np.save('u1.npy', u1)
-# # np.save('u2.npy', u2)
-# # np.save('U.npy', U)
-# # np.save('B.npy', B)
-# # with open('f_AB.pkl', 'wb') as f:
-# #     dill.dump(f_AB, f)
-# # with open('f_A.pkl', 'wb') as f:
-# #     dill.dump(f_A, f)
-# # with open('f_B.pkl', 'wb') as f:
-# #     dill.dump(f_B, f)
-# # with open('f_rhs.pkl', 'wb') as f:
-# #     dill.dump(f_rhs, f)
-# u1 = np.load('u1.npy')
-# u2 = np.load('u2.npy')
-# U = np.load('U.npy')
-# B = np.load('B.npy')
-# with open('f_AB.pkl', 'rb') as ff:
-#     f_AB = dill.load(ff)
-# with open('f_A.pkl', 'rb') as ff:
-#     f_A = dill.load(ff)
-# with open('f_B.pkl', 'rb') as ff:
-#     f_B = dill.load(ff)
-# with open('f_rhs.pkl', 'rb') as ff:
-#     f_rhs = dill.load(ff)
-# layers = [N_f, 64, 128, 64, 64, 2*N]
-# model = PhysicsInformedNN(grid_f, F[:ntrain], U, B[:ntrain], layers)
-# start_time = time.time()
-# model.train(-1, 150)
-# end_time = time.time()
-# elapsed_time = end_time - start_time
-# print(f"Training time: {elapsed_time:.6f} seconds")
-# torch.save(model.dnn.state_dict(), 'model.pt')
+errors = np.abs(prediction-u_test)
 
-# N_fine = 257
-# grid_fine = np.linspace(0, 1, N_fine)
-# prediction = model.predict(grid_f, grid, grid_fine, f_A, f_B, f_rhs[-ntest:], f_AB[-ntest:], f[-ntest:])
-# q = lambda x: np.where(x<=0.5, q1(x), q2(x))
-# grid = np.linspace(0, 1, N_fine)
-# qLeft, qRight = q(grid), q(grid)
-# qRight[int((N_fine-1)/2)] = q2(grid[int((N_fine-1)/2)])
-# u1_test, u2_test = u1[-ntest:], u2[-ntest:]
+fig = plt.figure(figsize=(4, 3), dpi=150)
+for i in range(ntest):
+    plt.plot(grid_fine, errors[i], color='gray', linestyle='--')
+plt.yscale("log")
+plt.xlabel("x")
+plt.tight_layout()
+plt.savefig('1d_high_constrast_errors')
 
-# u_test = recovery(grid, f_A, f_B, f_rhs[-ntest:], f_AB[-ntest:])
-
-# print(f'test error on grid with resolution {N_fine}: {np.linalg.norm(prediction-u_test) / np.linalg.norm(u_test)}')
-# fig = plt.figure(figsize=(7, 3), dpi=150)
-# plt.subplot(1, 2, 1)
-# plt.plot(grid_fine[:int(N_fine/2+1)], u_test[-ntest, :int(N_fine/2+1)].flatten(), 'r-', label='Ground Truth', alpha=1., zorder=0)
-# plt.plot(grid_fine[int(N_fine/2+1):], u_test[-ntest, int(N_fine/2+1):].flatten(), 'r-', alpha=1., zorder=0)
-# plt.plot(grid_fine[:int(N_fine/2+1)], prediction[-ntest, :int(N_fine/2+1)], 'b-', label='prediction', alpha=1., zorder=0)
-# plt.plot(grid_fine[int(N_fine/2+1):], prediction[-ntest, int(N_fine/2+1):], 'b-', alpha=1., zorder=0)
-# plt.legend(loc='best')
-# plt.xlabel("x")
-# plt.ylabel("$u$")
-# plt.grid()
-
-# plt.subplot(1, 2, 2)
-# plt.title("training loss")
-# plt.plot(model.loss_history)
-# plt.yscale("log")
-# plt.xlabel("epoch")
-
-# plt.tight_layout()
-# plt.show(block=True)
+fig = plt.figure(figsize=(4, 3), dpi=150)
+plt.plot(grid_fine[:int(N_fine/2+1)], u_test[-ntest, :int(N_fine/2+1)].flatten(), 'b-', label='Ground Truth', linewidth=2, alpha=1., zorder=0)
+plt.plot(grid_fine[int(N_fine/2+1):], u_test[-ntest, int(N_fine/2+1):].flatten(), 'b-', linewidth=2, alpha=1., zorder=0)
+plt.plot(grid_fine[:int(N_fine/2+1)], prediction[-ntest, :int(N_fine/2+1)], 'r--', label='Prediction', linewidth=2, alpha=1., zorder=0)
+plt.plot(grid_fine[int(N_fine/2+1):], prediction[-ntest, int(N_fine/2+1):], 'r--', linewidth=2, alpha=1., zorder=0)
+plt.legend(loc='best')
+plt.tight_layout()
+plt.savefig('1d_high_constrast_example')
+plt.show()

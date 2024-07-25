@@ -48,8 +48,8 @@ class DeepONet(nn.Module):
 ntrain, ntest = 1000, 200
 epochs = 3000
 type_ = 'unsupervised' # 'unsupervised'
-q1 = lambda x: 1+torch.exp(x)
-q2 = lambda x: 1-torch.log(x+1)
+q1 = lambda x: 5.0
+q2 = lambda x: 0.1*(4+32*x)
 q = lambda x: torch.where(x<=0.5, q1(x), q2(x))
 
 f = np.load('f.npy')
@@ -58,24 +58,26 @@ u2 = np.load('u2.npy')
 u = np.concatenate((u1, u2[:, 1:]), axis=-1)
 
 Nx = f.shape[-1]
+Nc = 33
 
-batch_size = 2 ** 8 + 1  # dim
+N = ntrain * Nc
+gridc = np.linspace(0, 1, Nc)
 
-
-N = ntrain * Nx
-grid = np.linspace(0, 1, Nx)
-
-input_loc = np.tile(grid, ntrain).reshape((N, 1))
-input_f = np.repeat(f[:ntrain], Nx, axis=0)
+input_loc = np.tile(gridc, ntrain).reshape((N, 1))
+input_f = np.repeat(f[:ntrain], Nc, axis=0)
 output = u[:ntrain].reshape((N, 1))
 input_f = torch.Tensor(input_f).to(device)
 input_loc = torch.Tensor(input_loc).to(device)
 output = torch.Tensor(output).to(device)
-rhs = torch.tensor(f[:ntrain]).reshape((N, 1)).float().to(device)
+interpolate_f = interpolate.interp1d(np.linspace(0, 1, f[:ntrain].shape[-1]), f[:ntrain])
+fc = interpolate_f(gridc)
+rhs = torch.tensor(fc).reshape((N, 1)).float().to(device)
 loc_b0 = torch.tile(torch.tensor([0.]), (N, 1)).to(device)
 loc_b1 = torch.tile(torch.tensor([1.]), (N, 1)).to(device)
-train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(input_f, input_loc, output, rhs, loc_b0, loc_b1),
-                                           batch_size=256, shuffle=True)
+loc_L = torch.tile(torch.tensor([0.5-0.02]), (N, 1)).to(device)
+loc_R = torch.tile(torch.tensor([0.5+0.02]), (N, 1)).to(device)
+train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(input_f, input_loc, output, rhs, loc_b0, loc_b1, loc_L, loc_R),
+                                           batch_size=1000, shuffle=True)
 
 model = DeepONet(Nx,  1).to(device)
 
@@ -87,7 +89,7 @@ for ep in range(epochs):
     model.train()
     t1 = default_timer()
     train_mse = 0
-    for x, l, y, r, lb0, lb1 in train_loader:
+    for x, l, y,  r, lb0, lb1, lL, lR in train_loader:
         optimizer.zero_grad()
         l.requires_grad = True
         out = model(x, l)
@@ -96,9 +98,14 @@ for ep in range(epochs):
         else:
             y_l = torch.autograd.grad(outputs=out, inputs=l, grad_outputs=torch.ones_like(out), create_graph=True)[0]
             y_ll = torch.autograd.grad(outputs=y_l, inputs=l, grad_outputs=torch.ones_like(y_l), create_graph=True)[0]
-            mse = 50.0*F.mse_loss(-y_ll+q(l)*out, r)
+            mse_equ = 50.0*F.mse_loss(-0.001*y_ll+q(l)*out, r)
             out0, out1 = model(x, lb0), model(x, lb1)
-            mse += 5.0*F.mse_loss(out0, torch.zeros_like(out0))+2*F.mse_loss(out1, torch.zeros_like(out1))
+            mse_b = 5.0*F.mse_loss(out0, torch.zeros_like(out0)) + 2*F.mse_loss(out1, torch.zeros_like(out1))
+            outL, outR = model(x, lL), model(x, lR)
+            # y_lL = torch.autograd.grad(outputs=outL, inputs=lL, grad_outputs=torch.ones_like(outL), create_graph=True)[0]
+            # y_lR = torch.autograd.grad(outputs=outR, inputs=lR, grad_outputs=torch.ones_like(outR), create_graph=True)[0]
+            mse_i = F.mse_loss(outR-outL, torch.ones_like(outL))#+F.mse_loss(y_lR-y_lL, torch.ones_like(y_lL))
+            mse = mse_equ + mse_b + mse_i
 
         mse.backward()
         optimizer.step()

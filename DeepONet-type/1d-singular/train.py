@@ -259,9 +259,9 @@ class PhysicsInformedNN():
     def train(self, nIter):
         self.dnn.train()
         train_mse = 0.
-        # test_pred = self.predict(self.test_x, self.test_f_A, self.test_f_B, self.test_f_rhs, self.test_f)
-        # test_error = np.linalg.norm(test_pred-self.test_u) / np.linalg.norm(self.test_u)
-        # self.test_error_history.append(test_error)
+        test_pred = self.predict(self.test_x, self.test_f_A, self.test_f_B, self.test_f_rhs, self.test_f)
+        test_error = np.linalg.norm(test_pred-self.test_u) / np.linalg.norm(self.test_u)
+        self.test_error_history.append(test_error)
         for epoch in range(nIter):
             for (input, B, B_boundary, B_interface) in self.train_loader:
                 self.optimizer.zero_grad()
@@ -280,11 +280,11 @@ class PhysicsInformedNN():
 
             self.loss_history.append(loss.item())
             if (epoch+1) % 100 == 0:
-                # test_pred = self.predict(self.test_x, self.test_f_A, self.test_f_B, self.test_f_rhs, self.test_f)
-                # test_error = np.linalg.norm(test_pred-self.test_u) / np.linalg.norm(self.test_u)
-                # self.test_error_history.append(test_error)
-                # print(f'Epoch: {epoch},  Loss {train_mse}, test error {test_error}')
-                print(f'Epoch: {epoch},  Loss {train_mse}')
+                test_pred = self.predict(self.test_x, self.test_f_A, self.test_f_B, self.test_f_rhs, self.test_f)
+                test_error = np.linalg.norm(test_pred-self.test_u) / np.linalg.norm(self.test_u)
+                self.test_error_history.append(test_error)
+                print(f'Epoch: {epoch},  Loss {train_mse}, test error {test_error}')
+                # print(f'Epoch: {epoch},  Loss {train_mse}')
     
     def predict(self, x, f_A, f_B, f_rhs, f, f_AB=None):
         # self.dnn.eval()
@@ -321,13 +321,12 @@ class PhysicsInformedNN():
         return pred_u
 
 N = 33
-epochs = 2000
+epochs = 3000
 ntrain, ntest = 1000, 200
 q1 = lambda x: 5.0*1000.0
 q2 = lambda x: 0.1*(4+32*x)*1000.0
 f = generate(samples=ntrain+ntest, out_dim=N)
-f = 1000.0*(1+0.1*f)
-# np.save('f.npy', f)
+np.save('f.npy', f)
 # f = np.load('f.npy')
 grid = np.linspace(0, 1, f.shape[-1])
 # interpolate_f = interpolate.interp1d(np.linspace(0, 1, f.shape[-1]), f)
@@ -345,8 +344,8 @@ u1, u2, U, B, f_AB, f_A, f_B, f_rhs = tfpm(grid, qLeft, qRight, f)
 N_fine = 257
 grid_fine = np.linspace(0, 1, N_fine)
 
-# np.save('u1.npy', u1)
-# np.save('u2.npy', u2)
+np.save('u1.npy', u1)
+np.save('u2.npy', u2)
 # np.save('U.npy', U)
 # np.save('B.npy', B)
 # np.save('f_AB.npy', f_AB)
@@ -367,7 +366,7 @@ grid_fine = np.linspace(0, 1, N_fine)
 #     f_B = dill.load(ff)
 # with open('f_rhs.pkl', 'rb') as ff:
 #     f_rhs = dill.load(ff)
-u1_test, u2_test = u1[-ntest:], u2[-ntest:]
+# u1_test, u2_test = u1[-ntest:], u2[-ntest:]
 u_test = recovery(grid_fine, f_A, f_B, f_rhs[-ntest:], f_AB[-ntest:])
 np.save('u_test.npy', u_test)
 layers = [N_f, 64, 64, 64, 2*N]
@@ -389,6 +388,7 @@ qRight[int((N_fine-1)/2)] = q2(grid_fine[int((N_fine-1)/2)])
 
 
 print(f'test error on grid with resolution {N_fine}: {np.linalg.norm(prediction-u_test) / np.linalg.norm(u_test)}')
+print('test error on high resolution: relative L_inf norm = ', np.linalg.norm(prediction-u_test, ord=np.inf) / np.linalg.norm(u_test, ord=np.inf))
 fig = plt.figure(figsize=(7, 3), dpi=150)
 plt.subplot(1, 2, 1)
 plt.plot(grid_fine[:int(N_fine/2+1)], u_test[-ntest, :int(N_fine/2+1)].flatten(), 'r-', label='Ground Truth', alpha=1., zorder=0)
@@ -418,7 +418,7 @@ plt.plot(np.arange(0, epochs), model.loss_history)
 plt.yscale("log")
 plt.xlabel("epochs")
 plt.tight_layout()
-plt.savefig('1d_smooth_loss')
+plt.savefig('1d_singular_loss')
 
 
 fig = plt.figure(figsize=(4, 3), dpi=150)
@@ -426,7 +426,7 @@ plt.plot(np.arange(0, epochs+1, 100), model.test_error_history, '-*')
 plt.yscale("log")
 plt.xlabel("epochs")
 plt.tight_layout()
-plt.savefig('1d_smooth_error')
+plt.savefig('1d_singular_error')
 plt.show()
 
 errors = np.abs(prediction-u_test)
@@ -437,7 +437,7 @@ for i in range(ntest):
 plt.yscale("log")
 plt.xlabel("x")
 plt.tight_layout()
-plt.savefig('1d_smooth_errors')
+plt.savefig('1d_singular_errors')
 
 
 fig = plt.figure(figsize=(4, 3), dpi=150)
@@ -447,5 +447,5 @@ plt.plot(grid_fine[:int(N_fine/2+1)], prediction[-ntest, :int(N_fine/2+1)], 'r--
 plt.plot(grid_fine[int(N_fine/2+1):], prediction[-ntest, int(N_fine/2+1):], 'r--', linewidth=2, alpha=1., zorder=0)
 plt.legend(loc='best')
 plt.tight_layout()
-plt.savefig('1d_smooth_example')
+plt.savefig('1d_singular_example')
 plt.show()
