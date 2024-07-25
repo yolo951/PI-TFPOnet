@@ -256,9 +256,6 @@ class PhysicsInformedNN():
             self.scheduler.step()
 
             self.loss_history.append(loss.item())
-            self.lossContinuos_history.append(lossContinuous.item())
-            self.lossBoundary_history.append(lossBoundary.item())
-            self.lossJump_history.append(lossJump.item())
             if (epoch+1) % 100 == 0:
                 print(f'Adam(or SGD) optimizer {epoch}th Loss {loss.item()}')
     
@@ -297,10 +294,11 @@ class PhysicsInformedNN():
         return pred_u
 
 
-N = 15  # must be odd
+N = 33  # must be odd
 q1 = lambda x: 5000.0
 q2 = lambda x: 100.0*(4+32*x)
-f = generate(samples=101)  # 前100个作为训练，最后一个做测试
+ntrain, ntest = 1000, 200
+f = generate(samples=ntrain+ntest, out_dim=N)
 grid = np.linspace(0, 1, f.shape[-1])
 interpolate_f = interpolate.interp1d(np.linspace(0, 1, f.shape[-1]), f)
 F = [lambda x, k=k: interpolate_f(x)[k] for k in range(f.shape[0])]
@@ -311,7 +309,7 @@ grid = np.linspace(0, 1, N)
 qLeft, qRight = q(grid), q(grid)
 qRight[int((N-1)/2)] = q2(grid[int((N-1)/2)])
 
-N_f = 15
+N_f = N
 grid_f = np.linspace(0, 1, N_f)
 u1, u2, U, B, f_AB, f_A, f_B, f_rhs = tfpm(grid, qLeft, qRight, F)
 layers = [N_f, 64, 64, 64, 2*N]
@@ -322,7 +320,7 @@ end_time = time.time()
 elapsed_time = end_time - start_time
 print(f"Training time: {elapsed_time:.6f} seconds")
 
-N_fine = 101
+N_fine = 257
 grid_fine = np.linspace(0, 1, N_fine)
 prediction = model.predict(grid_f, grid, grid_fine, f_A, f_B, f_rhs[-1], f_AB[-1], F[-1])
 q = lambda x: np.where(x<=0.5, q1(x), q2(x))
@@ -344,11 +342,7 @@ plt.grid()
 
 plt.subplot(1, 2, 2)
 plt.title("training loss")
-plt.plot(model.lossBoundary_history, label='boundary loss')
 plt.plot(model.loss_history, label='total loss')
-plt.plot(model.lossContinuos_history, label='continuous loss')
-plt.plot(model.lossJump_history, label='jump loss')
-plt.legend()
 plt.yscale("log")
 plt.xlabel("epoch")
 

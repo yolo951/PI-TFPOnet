@@ -12,15 +12,15 @@ from scipy.integrate import dblquad
 from math import sqrt
 
 def F(x,y):
-    return 0
-    #return np.sin(np.pi*(x+y))
+    # return 0
+    return np.sin(np.pi*(x+y))
 
 def c(x,y):
     if x < 1/2:
         a = 4
     else:
         a = 1
-    return 4*a #坐标变换
+    return 1000*4*a #坐标变换
     #return 1+x+y
 
 def b(x,y):
@@ -33,7 +33,7 @@ def b(x,y):
 
 alpha = 1 #interface jump
 beta = 0
-eps = 0.001    
+eps = 1.0    
 N = 32
 h = 1/(2*N)
 U = np.zeros((4*N**2,4*N**2))
@@ -168,8 +168,14 @@ for i in range(0,N):
             for kj in range(0,M+1):
                 xhi = -h + ki*hh
                 xhj = -h + kj*hh
-                # if np.exp(mu0*xhi)>1e10 or np.exp(-mu0*xhi)>1e3 or np.exp(mu0*xhj)>1e3 or np.exp(-mu0*xhj)>1e3: print(max(np.exp(mu0*xhi), np.exp(-mu0*xhi), np.exp(mu0*xhj), np.exp(-mu0*xhj)))
-                u_refine[j*M+kj,i*M+ki] = f0/c0 + c1*np.exp(mu0*xhi) + c2*np.exp(-mu0*xhi) + c3*np.exp(mu0*xhj) + c4*np.exp(-mu0*xhj) #仍然有大数*小数，造成误差
+                # if np.exp(mu0*xhi)>1e10 or np.exp(-mu0*xhi)>1e3 or np.exp(mu0*xhj)>1e3 or np.exp(-mu0*xhj)>1e3: print(max(np.exp(mu0*xhi), np.exp(mu0*xhj)))
+                # print('c',c1, c2,c3,c4)
+                # print('m',c1*np.exp(mu0*xhi), c2*np.exp(-mu0*xhi), c3*np.exp(mu0*xhj), c4*np.exp(-mu0*xhj))
+                c11 = 0.0 if c1<np.exp(-21-mu0*xhi) else c1*np.exp(mu0*xhi)
+                c22 = 0.0 if c2<np.exp(-21+mu0*xhi) else c2*np.exp(-mu0*xhi)
+                c33 = 0.0 if c3<np.exp(-21-mu0*xhj) else c3*np.exp(mu0*xhj)
+                c44 = 0.0 if c4<np.exp(-21+mu0*xhj) else c4*np.exp(-mu0*xhj)
+                u_refine[j*M+kj,i*M+ki] = f0/c0 + c11 + c22 + c33 + c44 #仍然有大数*小数，造成误差
 for k in range(0,M*N+1):
     s = k*hh
     u_refine[0,k] = b(s,0)
