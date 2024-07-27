@@ -118,7 +118,7 @@ def tfpm(grid, qLeft, qRight, F):
     B[N-2] -= 1.0
     B[N-1] -= 1.0
     
-    M_inverse = np.diag(10.0 / np.max(np.abs(U), axis=0))  # 为了让A, B不要那么大
+    M_inverse = np.diag(10.0 / np.max(np.abs(U), axis=0))
     # M_inverse = np.eye(U.shape[0])
     scaled_U = np.matmul(U, M_inverse)
     AB = np.linalg.solve(scaled_U, B).flatten() # scaled AB
@@ -192,7 +192,7 @@ class PhysicsInformedNN():
         self.U_boundary = torch.zeros((2, 2*N+2)).float().to(device)
         self.U_interface = torch.zeros((2, 2*N+2)).float().to(device)
         self.U[2:, 2:] = torch.cat((U[1:N-1,:], U[N+1:-1,:]), dim=0)
-        self.U[0, :3] = torch.tensor([5.0, 0.0, -5.0])  # 由于U的列被人为放大了，即np.max(U)=10, 这里不能再写成1，否则第一个区间不容易优化
+        self.U[0, :3] = torch.tensor([5.0, 0.0, -5.0])
         self.U[1, 1:4] = torch.tensor([5.0, 0.0, -5.0])
         self.U_boundary[0, :-2] = U[0,:]
         self.U_boundary[-1, 2:] = U[-1,:]
