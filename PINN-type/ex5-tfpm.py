@@ -1,9 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Jun 24 08:38:33 2024
 
-@author: Ye Li
-"""
 
 import numpy as np
 np.set_printoptions(threshold=np.inf)
@@ -150,7 +145,7 @@ x0[1:N+1] = x
 # plt.show()
 
 #refinement
-M = 10 #放大倍数
+M = 10
 u_refine = np.zeros((M*N+1,M*N+1))
 hh = 1/(M*N)
 for i in range(0,N):
@@ -175,7 +170,7 @@ for i in range(0,N):
                 c22 = 0.0 if c2<np.exp(-21+mu0*xhi) else c2*np.exp(-mu0*xhi)
                 c33 = 0.0 if c3<np.exp(-21-mu0*xhj) else c3*np.exp(mu0*xhj)
                 c44 = 0.0 if c4<np.exp(-21+mu0*xhj) else c4*np.exp(-mu0*xhj)
-                u_refine[j*M+kj,i*M+ki] = f0/c0 + c11 + c22 + c33 + c44 #仍然有大数*小数，造成误差
+                u_refine[j*M+kj,i*M+ki] = f0/c0 + c11 + c22 + c33 + c44 
 for k in range(0,M*N+1):
     s = k*hh
     u_refine[0,k] = b(s,0)
@@ -192,5 +187,4 @@ xxh, yyh = np.meshgrid(xh[int(N*M/2):], yh)
 ax.plot_surface(xxh, yyh, u_refine[:, int(N*M/2):], cmap='rainbow')
 plt.show()
 
-#print('condition number:',np.linalg.cond(U))
 

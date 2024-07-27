@@ -289,7 +289,6 @@ class PhysicsInformedNN():
         # self.optimizer.step(self.loss_func)
     
     def predict(self, grid, x, f_A, f_B, f_F, f_AB):
-        # 训练数据集不包括x=0, 测试时输入x=0，得到的pred_AB不能保证pre_u满足边界条件
         self.dnn.eval()
         pred_AB = self.dnn(torch.tensor(grid).float().to(device)).reshape((len(grid),2))
         pred_AB = pred_AB.detach().cpu().numpy()
