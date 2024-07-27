@@ -1,3 +1,7 @@
 __pycache__/
 .idea/
 .vscode/
+DeepONet-type/__pycache__/
+DeepONet-type/1d-smooth/__pycache__/
+DeepONet-type/2d-smooth/__pycache__/
+DeepONet-type/2d-singular/__pycache__/

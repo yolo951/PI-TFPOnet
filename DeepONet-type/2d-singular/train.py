@@ -189,7 +189,7 @@ def c(x,y):
     return a*1000.0
 
 def b(x,y):
-    if x > 1/2:
+    if x >= 1/2:
         a = 2*(1-x)
     else:
         a = 0
