@@ -207,7 +207,6 @@ alpha = 1 #interface jump
 beta = 0
 eps = 1.001
 f = generate(samples = ntotal, out_dim=N, length_scale=1)
-f = 1. + 0.1*f
 
 epochs = 10000
 learning_rate = 0.001
@@ -241,6 +240,7 @@ for k in range(ntotal):
     f_total[k] = f[k].reshape(-1)
 
 f_total = torch.Tensor(f_total).to(device)
+# f_total = torch.Tensor(f).to(device)
 U_total = torch.Tensor(U_total).to(device)
 B_total = torch.Tensor(B_total).to(device)
 C_total = torch.Tensor(C_total).to(device)
@@ -283,6 +283,7 @@ for i in range(epochs):
     train_mse = 0
     for fb, Ub, Bb, Cb in train_loader:
         optimizer.zero_grad()
+        # Cb_pred = model(fb).reshape(fb.shape[0], -1)
         Cb_pred = model(fb)
         U_jump = torch.index_select(Ub, 1, index_jump)
         B_jump = torch.index_select(Bb, 1, index_jump)
@@ -301,6 +302,7 @@ for i in range(epochs):
     train_mse /= len(train_loader)
     loss_history.append(train_mse)
     
+    # C_pred = model(f_test).detach().cpu().reshape(f_test.shape[0], -1)
     C_pred = model(f_test).detach().cpu()
     up_pred = np.zeros((ntest,N,N))
     for k in range(ntest):
@@ -327,7 +329,7 @@ np.save('loss_history.npy', loss_history)
 np.save('rel_l2_history.npy', rel_l2_history)
 
 
-C_pred = model(f_train).detach().cpu()
+C_pred = model(f_train).detach().cpu().reshape(f_train.shape[0], -1)
 up_pred = np.zeros((ntrain,N,N))
 for k in range(ntrain):
     interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N),np.linspace(0, 1, N)), f[k])
@@ -349,7 +351,7 @@ rel_l2 = np.linalg.norm(up_pred - up_train) / np.linalg.norm(up_train)
 print('relative l2 error on train data: ',rel_l2)
             
 
-C_pred = model(f_test).detach().cpu()
+C_pred = model(f_test).detach().cpu().reshape(f_test.shape[0], -1)
 up_pred = np.zeros((ntest,N,N))
 for k in range(ntest):
     interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N),np.linspace(0, 1, N)), f[ntrain+k])

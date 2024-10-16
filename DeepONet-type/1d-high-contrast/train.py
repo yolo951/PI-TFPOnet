@@ -431,7 +431,7 @@ plt.savefig('1d_high_constrast_error')
 plt.show()
 
 errors = np.abs(prediction-u_test)
-
+np.save('errors.npy', errors)
 fig = plt.figure(figsize=(4, 3), dpi=150)
 for i in range(ntest):
     plt.plot(grid_fine, errors[i], color='gray', linestyle='--')

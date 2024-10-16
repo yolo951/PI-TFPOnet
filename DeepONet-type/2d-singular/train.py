@@ -216,7 +216,7 @@ batch_size = 32
 step_size = 2000
 gamma = 0.5
 model = DNN([7*N**2,512,512,128,512,4*N**2])
-# model = Net().to(device)
+# model = encoder_decoder().to(device)
 
 
 k = 0 
@@ -241,6 +241,7 @@ xx,yy = np.meshgrid(x,x)
 # np.save('C_total.npy', C_total)
 # np.save('up_total.npy', up_total)
 f_total = np.load('f_total.npy')
+# f_total = np.load('f.npy')
 U_total = np.load('U_total.npy')
 B_total = np.load('B_total.npy')
 C_total = np.load('C_total.npy')
@@ -304,6 +305,7 @@ def train():
         for fb, Ub, Bb in dataloader:
             optimizer.zero_grad()
             Cb_pred = model(fb)
+            # Cb_pred = model(fb).reshape(fb.shape[0], -1)
             U_jump = torch.index_select(Ub, 1, index_jump)
             B_jump = torch.index_select(Bb, 1, index_jump)
             U_continuous = torch.index_select(Ub, 1, index_continuous)
@@ -338,9 +340,10 @@ def train():
  
 def main():
     train()
-    
-    model = DNN([7*N**2,512,512,128,512,4*N**2]).to(device)
-    model.load_state_dict(torch.load('model.pt'))
+
+    # model = DNN([7*N**2,512,512,128,512,4*N**2]).to(device)
+    # model = encoder_decoder().to(device)
+    # model.load_state_dict(torch.load('model.pt'))
     
     
 
@@ -348,7 +351,7 @@ def main():
     up_refine = np.zeros((ntest, M*N+1,M*N+1))
     up_test = np.zeros((ntest, M*N+1,M*N+1))
     C_pred = model(f_test).detach().cpu()
-    # print(C_pred.shape)
+    # C_pred = model(f_test).detach().cpu().reshape(f_train.shape[0], -1)
 
     hh = 1/(M*N)
     xh = np.linspace(0,1,N*M+1)
