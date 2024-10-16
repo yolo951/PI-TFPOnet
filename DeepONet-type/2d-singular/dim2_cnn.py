@@ -47,7 +47,7 @@ class ConvBlock_Tanh(nn.Module):
 
 
 class encoder_decoder(nn.Module):
-    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512):
+    def __init__(self, dim1=16, dim2=32, dim3=64, dim4=128, dim5=256):
         super(encoder_decoder, self).__init__()
 
         # Encoder
@@ -62,7 +62,7 @@ class encoder_decoder(nn.Module):
 
 
         # Decoder
-        self.deconv1_1 = DeconvBlock(dim5, dim4, kernel_size=4, stride=1, padding=0)
+        self.deconv1_1 = DeconvBlock(dim5, dim4, kernel_size=2, stride=1, padding=0)
         self.deconv1_2 = ConvBlock(dim4, dim4)
         self.deconv2_1 = DeconvBlock(dim4, dim3, kernel_size=4, stride=2, padding=1)
         self.deconv2_2 = ConvBlock(dim3, dim3)
@@ -105,7 +105,7 @@ class encoder_decoder(nn.Module):
 
 
 
-# N = 32
+# N = 16
 # model = encoder_decoder()
 
 # batch_size = 60

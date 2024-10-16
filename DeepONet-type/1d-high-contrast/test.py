@@ -1,7 +1,7 @@
 
 import matplotlib.pyplot as plt
 import numpy as np
-
+from matplotlib.ticker import FormatStrFormatter
 
 
 
@@ -25,4 +25,4 @@ plt.yscale("log")
 plt.grid()
 plt.tight_layout()
 # plt.show()
-plt.savefig('1d_singular_errors')
+plt.savefig('1d_high_constrast_errors')
