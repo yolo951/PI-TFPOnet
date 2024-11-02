@@ -195,7 +195,6 @@ alpha = 1 #interface jump
 beta = 0
 eps = 1.0
 f = generate(samples = ntotal, out_dim=N, length_scale=1)
-# f = 1.0+0.1*f
 np.save(r'DeepONet-type\2d-smooth\f.npy', f)
 
 k = 0 
