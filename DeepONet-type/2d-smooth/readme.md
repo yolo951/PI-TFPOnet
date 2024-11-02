@@ -1,7 +1,7 @@
 
-# Deep Learning Project for Matrix Analysis
+# implementation of 2D smooth case
 
-This repository contains the implementation of a deep learning model for matrix analysis, including data generation, training, and visualization components.
+This repository contains the implementation of models (our model and baseline models) for 2D smooth case in our paper.
 
 ## Project Structure
 
@@ -11,20 +11,19 @@ This repository contains the implementation of a deep learning model for matrix 
   - Vector data files (`vectorB.npy`, `vectorC.npy`)
   - Matrix data files (`matrixf.npy`, `matrixU.npy`, `matrixup.npy`)
 
-### Model Components
-- `deeponet.py`: Implementation of the deep neural network architecture
-- `ionet.py`: Input-output network implementation
-- `dim2_cnn.py`: 2D CNN model implementation
+### Baseline Methods
+- `deeponet.py`: DeepONet implementation (baseline method)
+- `ionet.py`: IO-Net implementation (baseline method)
 
-### Training and Testing
+### Our Model
+- `dim2_cnn.py`: Optional CNN model
 - `train.py`: Main training script that:
   - Trains the model
   - Generates visualization plots
   - Saves trained model parameters
   - Outputs figures used in the paper
-- `test.py`: Testing and evaluation script
 
-### Output Files
+#### Output Files
 - Training visualizations:
   - `2d_smooth_error.png`
   - `2d_smooth_ground.png`
@@ -32,7 +31,7 @@ This repository contains the implementation of a deep learning model for matrix 
   - `2d_smooth_loss.png`
   - `2d_smooth_refine.png`
 
-### Model and Training History
+#### Model and Training History
 - `model_state.pt`: Saved model parameters
 - `loss_history.npy`: Training loss history
 - `rel_l2_history.npy`: Relative L2 error history
