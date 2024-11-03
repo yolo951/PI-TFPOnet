@@ -245,6 +245,7 @@ print('relative l2 error on test data: ',rel_l2)
 rel_l2 = np.linalg.norm(up_refine - ut_refine) / np.linalg.norm(ut_refine)
 rel_l_infty = np.linalg.norm((up_refine - ut_refine).flatten(), ord=np.inf) / np.linalg.norm(ut_refine.flatten(), ord=np.inf)
 print('relative l2 error on test data (M-times test-resolution): ',rel_l2)
+print('relative l_infty error on test data (M-times test-resolution): ',rel_l_infty)
 
 fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
 xh = np.linspace(0,1/2,int(N/2)*M)
