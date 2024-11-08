@@ -186,44 +186,97 @@ def tfpm2d(N,f):
 
 if __name__ == '__main__':
     N = 16
-    ntrain = 1000  
-    ntest = 200
-    ntotal = ntrain + ntest
+    ntotal = 1
     alpha = 1 # interface jump
     beta = 0
     eps = 1.0  # We multiply both sides of the equation by 1/eps, so eps here can be 1.0
     f = generate(samples = ntotal, out_dim=N, length_scale=1)
     f *= 1000.0
-    np.save(r'DeepONet-type\2d-singular\f.npy', f)
 
     k = 0 
     x = np.linspace(1/(2*N),1-1/(2*N),N)
     xx,yy = np.meshgrid(x,x)
+
+    # tfpm on sparse grid
+    U, B, C, up, idx, v = tfpm2d(N,f[k])
+    # refine on 8-times fine grid
+    M = 4
+    interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N),np.linspace(0, 1, N)), f[0])
+    F = lambda x, y : interpolate_f_2d((x,y))
+    hh = 1/(M*N)
+    up_refine = np.zeros((M*N+1,M*N+1))
+    for i in range(0,N):
+        for j in range(0,N):
+            x0 = (2*i+1)/(2*N)
+            y0 = (2*j+1)/(2*N)
+            f0 = F(x0,y0)
+            c0 = c(x0,y0)
+            mu0 = np.sqrt(c0)/eps
+            c1p = C[4*N*j+4*i]
+            c2p = C[4*N*j+4*i+1]
+            c3p = C[4*N*j+4*i+2]
+            c4p = C[4*N*j+4*i+3]
+            for ki in range(0,M):
+                for kj in range(0,M):
+                    xhi = -1/(2*N) + ki*hh
+                    xhj = -1/(2*N) + kj*hh
+                    up_refine[j*M+kj,i*M+ki] = f0/c0 + c1p*np.exp(mu0*xhi) + c2p*np.exp(-mu0*xhi) + c3p*np.exp(mu0*xhj) + c4p*np.exp(-mu0*xhj)
+    for l in range(0,M*N+1):
+        s = l*hh
+        up_refine[0,l] = b(s,0)
+        up_refine[M*N,l] = b(s,1)
+        up_refine[l,0] = b(0,s)
+        up_refine[l,M*N] = b(1,s)
+
+    # directly calculate on fine grid
+    grid_fine = np.linspace(0,1,N*M+1)
+    X, Y = np.meshgrid(grid_fine, grid_fine)
+    points = np.stack((X.flatten(), Y.flatten()), axis=-1)
+    f_fine = interpolate_f_2d(points).reshape(N*M+1, N*M+1)
+    U, B, C, up_fine, idx, v = tfpm2d(N*M,f_fine)
+    grid_fine_mid = np.hstack([0, np.linspace(1/(2*N*M),1-1/(2*N*M),N*M), 1])
+    up_expand = np.zeros((N*M+2, N*M+2))
+    up_expand[1:-1, 1:-1] = up_fine[:]
+    for l in range(0, M*N+2):
+        s = grid_fine_mid[l]
+        up_expand[0,l] = b(s,0)
+        up_expand[M*N+1,l] = b(s,1)
+        up_expand[l,0] = b(0,s)
+        up_expand[l,M*N+1] = b(1,s)
+
+    # make plots
     fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    ax.plot_surface(xx, yy, f[k], cmap='rainbow')
-    ax.title.set_text('generated f(x,y)')
+    xh = np.linspace(0,1/2,int(N/2)*M)
+    yh = np.linspace(0,1,N*M+1)
+    xxh,yyh = np.meshgrid(xh,yh)
+    ax.plot_surface(xxh, yyh, up_refine[:,0:int(N/2)*M], cmap='rainbow')
+    xh = np.linspace(1/2,1,int(N/2)*M+1)
+    yh = np.linspace(0,1,N*M+1)
+    xxh,yyh = np.meshgrid(xh,yh)
+    ax.plot_surface(xxh, yyh, up_refine[:,int(N/2)*M:N*M+1], cmap='rainbow')
+    ax.title.set_text('refinement u(x,y)')
+
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    xh = grid_fine_mid[:M*N//2+1]
+    yh = grid_fine_mid
+    xxh,yyh = np.meshgrid(xh,yh)
+    ax.plot_surface(xxh, yyh, up_expand[:,0:int(N/2)*M+1], cmap='rainbow')
+    xh = grid_fine_mid[M*N//2+1:]
+    yh = grid_fine_mid
+    xxh,yyh = np.meshgrid(xh,yh)
+    ax.plot_surface(xxh, yyh, up_expand[:,int(N/2)*M+1:], cmap='rainbow')
+    ax.title.set_text('fine grid ground truth u(x,y)')
+
+    # fig, ax = plt.subplots()
+    # xh = np.linspace(0,1,N*M+1)
+    # yh = np.linspace(0,1,N*M+1)
+    # xxh,yyh = np.meshgrid(xh,yh)
+    # cs = ax.contourf(xxh, yyh, np.abs(up_fine-up_refine[k]))
+    # cbar = fig.colorbar(cs)
+    # plt.title('error distribution')
     plt.show()
 
-    # U_total = np.zeros((ntotal,4*N**2,4*N**2), dtype=np.float32)
-    B_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
-    C_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
-    up_total = np.zeros((ntotal,N,N), dtype=np.float32)
-    f_total = np.zeros((ntotal,N**2), dtype=np.float32)
-    index = np.zeros((ntotal, 4*N**2, 8), dtype=np.float32)
-    val = np.zeros((ntotal, 4*N**2, 8), dtype=np.float32)
-    for k in range(ntotal):
-        U, B, C, up, idx, v = tfpm2d(N,f[k])
-        # U_total[k] = U
-        B_total[k] = B
-        C_total[k] = C
-        up_total[k] = up
-        index[k] = idx
-        val[k] = v
-        f_total[k] = f[k].reshape(-1)
-    np.save(r'DeepONet-type\2d-singular\matrixf.npy', f_total)
-    # np.save(r'DeepONet-type\2d-smooth\matrixU.npy', U_total)
-    np.save(r'DeepONet-type\2d-singular\vectorB.npy', B_total)
-    np.save(r'DeepONet-type\2d-singular\vectorC.npy', C_total)
-    np.save(r'DeepONet-type\2d-singular\matrixup.npy', up_total)
-    np.save(r'DeepONet-type\2d-singular\index_of_u.npy', index)
-    np.save(r'DeepONet-type\2d-singular\val_of_u.npy', val)
+
+
+
+
