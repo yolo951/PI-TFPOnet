@@ -4,4 +4,5 @@ __pycache__/
 DeepONet-type/__pycache__/
 DeepONet-type/1d-smooth/__pycache__/
 DeepONet-type/2d-smooth/__pycache__/
-DeepONet-type/2d-singular/__pycache__/DeepONet-type/2d-smooth/matrixU.npy
+DeepONet-type/2d-singular/__pycache__/
+DeepONet-type/2d-smooth/matrixU.npy
