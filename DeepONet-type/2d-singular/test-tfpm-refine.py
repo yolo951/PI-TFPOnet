@@ -69,7 +69,7 @@ def tfpm2d(N,f):
     index = np.zeros((4*N**2, 8))
     val = np.zeros((4*N**2, 8))
     B = np.zeros(4*N**2)
-    interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, f.shape[-1]),np.linspace(0, 1, f.shape[-1])), f)
+    interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, f.shape[-1]),np.linspace(0, 1, f.shape[-1])), f.transpose(1, 0))
     F = lambda x, y : interpolate_f_2d((x,y))
     
     #boundary y=0.
@@ -169,7 +169,7 @@ def tfpm2d(N,f):
     
     #计算解
     C = np.linalg.solve(U,B)
-    up = np.zeros((N,N)) #每个网格中心点值，不包含边界
+    up = np.zeros((N+1, N+1))
     for i in range(0,N):
         for j in range(0,N):
             x0 = (2*i+1)*h
@@ -181,7 +181,15 @@ def tfpm2d(N,f):
             c2 = C[4*N*j+4*i+1]
             c3 = C[4*N*j+4*i+2]
             c4 = C[4*N*j+4*i+3]
-            up[j,i] = f0/c0 + c1 + c2 + c3 + c4
+            xhi = -1/(2*N)
+            xhj = -1/(2*N)
+            up[j,i] = f0/c0 + c1*np.exp(mu0*xhi) + c2*np.exp(-mu0*xhi) + c3*np.exp(mu0*xhj) + c4*np.exp(-mu0*xhj)
+    for l in range(0, N+1):
+        s = l/N
+        up[0,l] = b(s,0)
+        up[N,l] = b(s,1)
+        up[l,0] = b(0,s)
+        up[l,N] = b(1,s)
     return U, B, C, up, index, val
 
 if __name__ == '__main__':
@@ -190,7 +198,7 @@ if __name__ == '__main__':
     alpha = 1 # interface jump
     beta = 0
     eps = 1.0  # We multiply both sides of the equation by 1/eps, so eps here can be 1.0
-    f = generate(samples = ntotal, out_dim=N, length_scale=1)
+    f = generate(samples = ntotal, out_dim=N+1, length_scale=1)
     f *= 1000.0
 
     k = 0 
@@ -201,8 +209,8 @@ if __name__ == '__main__':
     U, B, C, up, idx, v = tfpm2d(N,f[k])
     # refine on 8-times fine grid
     M = 4
-    interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N),np.linspace(0, 1, N)), f[0])
-    F = lambda x, y : interpolate_f_2d((x,y))
+    interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N+1),np.linspace(0, 1, N+1)), f[0].T)
+    F = lambda x, y : interpolate_f_2d((x, y))
     hh = 1/(M*N)
     up_refine = np.zeros((M*N+1,M*N+1))
     for i in range(0,N):
@@ -234,48 +242,61 @@ if __name__ == '__main__':
     points = np.stack((X.flatten(), Y.flatten()), axis=-1)
     f_fine = interpolate_f_2d(points).reshape(N*M+1, N*M+1)
     U, B, C, up_fine, idx, v = tfpm2d(N*M,f_fine)
-    grid_fine_mid = np.hstack([0, np.linspace(1/(2*N*M),1-1/(2*N*M),N*M), 1])
-    up_expand = np.zeros((N*M+2, N*M+2))
-    up_expand[1:-1, 1:-1] = up_fine[:]
-    for l in range(0, M*N+2):
-        s = grid_fine_mid[l]
-        up_expand[0,l] = b(s,0)
-        up_expand[M*N+1,l] = b(s,1)
-        up_expand[l,0] = b(0,s)
-        up_expand[l,M*N+1] = b(1,s)
 
     # make plots
-    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    xh = np.linspace(0,1/2,int(N/2)*M)
-    yh = np.linspace(0,1,N*M+1)
-    xxh,yyh = np.meshgrid(xh,yh)
-    ax.plot_surface(xxh, yyh, up_refine[:,0:int(N/2)*M], cmap='rainbow')
-    xh = np.linspace(1/2,1,int(N/2)*M+1)
-    yh = np.linspace(0,1,N*M+1)
-    xxh,yyh = np.meshgrid(xh,yh)
-    ax.plot_surface(xxh, yyh, up_refine[:,int(N/2)*M:N*M+1], cmap='rainbow')
-    ax.title.set_text('refinement u(x,y)')
-
-    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    xh = grid_fine_mid[:M*N//2+1]
-    yh = grid_fine_mid
-    xxh,yyh = np.meshgrid(xh,yh)
-    ax.plot_surface(xxh, yyh, up_expand[:,0:int(N/2)*M+1], cmap='rainbow')
-    xh = grid_fine_mid[M*N//2+1:]
-    yh = grid_fine_mid
-    xxh,yyh = np.meshgrid(xh,yh)
-    ax.plot_surface(xxh, yyh, up_expand[:,int(N/2)*M+1:], cmap='rainbow')
-    ax.title.set_text('fine grid ground truth u(x,y)')
-
-    # fig, ax = plt.subplots()
-    # xh = np.linspace(0,1,N*M+1)
+    # fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    # xh = np.linspace(0,1/2,int(N/2)*M+1)
+    # yh = np.linspace(0,1,N*M+1)
+    # xxh,yyh = np.meshgrid(xh[:-1],yh)
+    # ax.plot_surface(xxh, yyh, up_refine[:,0:int(N/2)*M], cmap='rainbow')
+    # xh = np.linspace(1/2,1,int(N/2)*M+1)
     # yh = np.linspace(0,1,N*M+1)
     # xxh,yyh = np.meshgrid(xh,yh)
-    # cs = ax.contourf(xxh, yyh, np.abs(up_fine-up_refine[k]))
-    # cbar = fig.colorbar(cs)
-    # plt.title('error distribution')
-    plt.show()
+    # ax.plot_surface(xxh, yyh, up_refine[:,int(N/2)*M:], cmap='rainbow')
+    # ax.title.set_text('refinement u(x,y)')
 
+    # fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    # xh = np.linspace(0,1/2,int(N/2)*M+1)
+    # yh = np.linspace(0,1,N*M+1)
+    # xxh,yyh = np.meshgrid(xh[:-1],yh)
+    # ax.plot_surface(xxh, yyh, up_fine[:,0:int(N/2)*M], cmap='rainbow')
+    # xh = np.linspace(1/2,1,int(N/2)*M+1)
+    # yh = np.linspace(0,1,N*M+1)
+    # xxh,yyh = np.meshgrid(xh,yh)
+    # ax.plot_surface(xxh, yyh, up_fine[:,int(N/2)*M:], cmap='rainbow')
+    # ax.title.set_text('fine grid ground truth u(x,y)')
+
+    xh = np.linspace(0,1,N*M+1)
+    yh = np.linspace(0,1,N*M+1)
+    xxh,yyh = np.meshgrid(xh,yh)
+
+    fig = plt.figure(figsize=(12, 3.5))
+    # [left, bottom, width, height]
+    ax0 = fig.add_axes([0.05, 0.1, 0.25, 0.8])
+    ax1 = fig.add_axes([0.34, 0.1, 0.25, 0.8])
+    ax_cb = fig.add_axes([0.60, 0.1, 0.01, 0.8])
+    ax2 = fig.add_axes([0.68, 0.1, 0.25, 0.8])
+    ax_cb2 = fig.add_axes([0.94, 0.1, 0.01, 0.8])
+
+    vmin = min(up_refine.min(), up_fine.min())
+    vmax = max(up_refine.max(), up_fine.max())
+    levels = np.linspace(vmin, vmax, 100)
+    cs0 = ax0.contourf(xxh, yyh, up_refine, levels=levels, cmap='RdYlBu_r')
+    cs1 = ax1.contourf(xxh, yyh, up_fine, levels=levels, cmap='RdYlBu_r')
+    cbar = fig.colorbar(cs0, cax=ax_cb, format='%.3f')
+    error = np.abs(up_fine-up_refine)
+    levels_error = np.linspace(error.min(), error.max(), 100)
+    cs2 = ax2.contourf(xxh, yyh, error, levels=levels_error, cmap='RdYlBu_r')
+    cbar2 = fig.colorbar(cs2, cax=ax_cb2, format='%.3f')
+
+    ax0.set_title('Refinement prediction', fontsize=14)
+    ax1.set_title('Ground Truth', fontsize=14)
+    ax2.set_title('Point-wise error', fontsize=14)
+
+    for ax in [ax0, ax1, ax2]:
+        ax.set_aspect('equal')
+    plt.savefig(r'DeepONet-type\2d-singular\2d_singular_compare.png')
+    plt.show()
 
 
 
