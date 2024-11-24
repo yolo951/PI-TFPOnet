@@ -1,5 +1,4 @@
 
-
 import numpy as np
 from scipy import interpolate
 from sklearn import gaussian_process as gp
@@ -179,7 +178,6 @@ def tfpm2d(N,f):
             c3 = C[4*N*j+4*i+2]
             c4 = C[4*N*j+4*i+3]
             up[j,i] = f0/c0 + c1 + c2 + c3 + c4
-    
     return B, C, up, index, val
 
 if __name__ == '__main__':
@@ -190,36 +188,30 @@ if __name__ == '__main__':
     alpha = 1 # interface jump
     beta = 0
     eps = 1.0  # We multiply both sides of the equation by 1/eps, so eps here can be 1.0
-    f = generate(samples = ntotal, out_dim=N, length_scale=1)
+    f = generate(samples = ntotal, out_dim=N+1, length_scale=1)
     f *= 1000.0
     np.save(r'DeepONet-type\2d-singular\f.npy', f)
 
     k = 0 
-    x = np.linspace(1/(2*N),1-1/(2*N),N)
+    x = np.linspace(0, 1, N+1)
     xx,yy = np.meshgrid(x,x)
     fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
     ax.plot_surface(xx, yy, f[k], cmap='rainbow')
     ax.title.set_text('generated f(x,y)')
     plt.show()
 
-    # U_total = np.zeros((ntotal,4*N**2,4*N**2), dtype=np.float32)
     B_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
     C_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
     up_total = np.zeros((ntotal,N,N), dtype=np.float32)
-    f_total = np.zeros((ntotal,N**2), dtype=np.float32)
-    index = np.zeros((ntotal, 4*N**2, 8), dtype=np.float32)
-    val = np.zeros((ntotal, 4*N**2, 8), dtype=np.float32)
+    f_total = np.zeros((ntotal,(N+1)**2), dtype=np.float32)
     for k in range(ntotal):
-        B, C, up, idx, v = tfpm2d(N,f[k])
+        B, C, up, index, val = tfpm2d(N,f[k])
         # U_total[k] = U
         B_total[k] = B
         C_total[k] = C
         up_total[k] = up
-        index[k] = idx
-        val[k] = v
         f_total[k] = f[k].reshape(-1)
     np.save(r'DeepONet-type\2d-singular\matrixf.npy', f_total)
-    # np.save(r'DeepONet-type\2d-smooth\matrixU.npy', U_total)
     np.save(r'DeepONet-type\2d-singular\vectorB.npy', B_total)
     np.save(r'DeepONet-type\2d-singular\vectorC.npy', C_total)
     np.save(r'DeepONet-type\2d-singular\matrixup.npy', up_total)
