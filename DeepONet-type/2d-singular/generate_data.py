@@ -206,7 +206,6 @@ if __name__ == '__main__':
     f_total = np.zeros((ntotal,(N+1)**2), dtype=np.float32)
     for k in range(ntotal):
         B, C, up, index, val = tfpm2d(N,f[k])
-        # U_total[k] = U
         B_total[k] = B
         C_total[k] = C
         up_total[k] = up
