@@ -66,7 +66,7 @@ learning_rate = 0.001
 batch_size = 32
 step_size = 2000
 gamma = 0.5
-model = DNN([N**2,512,256,128,128,256,512,4*N**2]).to(device)
+model = DNN([(N+1)**2,512,256,128,128,256,512,4*N**2]).to(device)
 # model = encoder_decoder().to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
@@ -82,8 +82,8 @@ B_total = np.load(r'DeepONet-type\2d-singular\vectorB.npy')
 C_total = np.load(r'DeepONet-type\2d-singular\vectorC.npy')
 up_total = np.load(r'DeepONet-type\2d-singular\matrixup.npy')
 f_train = torch.tensor(f_total[0:ntrain], dtype=torch.float32).to(device)
-index_of_u_train = torch.LongTensor(index_of_u[0:ntrain]).to(device)
-val_of_u_train = torch.tensor(val_of_u[0:ntrain], dtype=torch.float32).to(device)
+index_of_u = torch.LongTensor(index_of_u).to(device)
+val_of_u = torch.tensor(val_of_u, dtype=torch.float32).to(device)
 B_train = torch.tensor(B_total[0:ntrain], dtype=torch.float32).to(device)
 C_train = torch.tensor(C_total[0:ntrain], dtype=torch.float32).to(device)
 up_train = up_total[0:ntrain]
@@ -91,7 +91,7 @@ up_train = up_total[0:ntrain]
 f_test = torch.tensor(f_total[ntrain:ntotal], dtype=torch.float32).to(device)
 up_test = torch.tensor(up_total[ntrain:ntotal], dtype=torch.float32).to(device)
 C_test = torch.tensor(C_total[ntrain:ntotal], dtype=torch.float32).to(device)
-train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(f_train, index_of_u_train, val_of_u_train, B_train, C_train), batch_size=batch_size, shuffle=True)
+train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(f_train, B_train, C_train), batch_size=batch_size, shuffle=True)
 mseloss = torch.nn.MSELoss()
 
 index_jump = []
@@ -119,9 +119,11 @@ rel_l2_history = []
 for i in range(epochs):
     model.train()
     train_mse = 0
-    for fb, index_u, val_u, Bb, Cb in train_loader:
+    for fb, Bb, Cb in train_loader:
         optimizer.zero_grad()
         Cb_pred = model(fb)
+        val_u = val_of_u.unsqueeze(0).repeat(fb.shape[0], 1, 1)
+        index_u = index_of_u.unsqueeze(0).repeat(fb.shape[0], 1, 1)
         U_jump = torch.index_select(val_u, 1, index_jump)
         B_jump = torch.index_select(Bb, 1, index_jump)
         U_continuous = torch.index_select(val_u, 1, index_continuous)
@@ -154,7 +156,7 @@ torch.save(model.state_dict(), r'DeepONet-type\2d-singular\model_state.pt')
 C_pred = model(f_train).detach().cpu().reshape(f_train.shape[0], -1)
 up_pred = np.zeros((ntrain,N,N))
 for k in range(ntrain):
-    interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N),np.linspace(0, 1, N)), f[k])
+    interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N+1),np.linspace(0, 1, N+1)), f[k])
     F = lambda x, y : interpolate_f_2d((x,y))*1000.0
     C = C_pred[k]    
     for i in range(0,N):
@@ -179,7 +181,7 @@ M = 8 # M-times test-resolution
 up_refine = np.zeros((ntest, M*N+1,M*N+1))
 ut_refine = np.zeros((ntest, M*N+1,M*N+1))
 for k in range(ntest):
-    interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N),np.linspace(0, 1, N)), f[ntrain+k])
+    interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N+1),np.linspace(0, 1, N+1)), f[ntrain+k])
     F = lambda x, y : interpolate_f_2d((x,y))*1000.0
     C = C_pred[k]    
     for i in range(0,N):
