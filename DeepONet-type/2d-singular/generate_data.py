@@ -181,7 +181,7 @@ def tfpm2d(N,f):
     return B, C, up, index, val
 
 if __name__ == '__main__':
-    N = 16
+    N = 32
     ntrain = 1000  
     ntest = 200
     ntotal = ntrain + ntest
@@ -210,9 +210,17 @@ if __name__ == '__main__':
         C_total[k] = C
         up_total[k] = up
         f_total[k] = f[k].reshape(-1)
-    np.save(r'DeepONet-type\2d-singular\matrixf.npy', f_total)
-    np.save(r'DeepONet-type\2d-singular\vectorB.npy', B_total)
-    np.save(r'DeepONet-type\2d-singular\vectorC.npy', C_total)
-    np.save(r'DeepONet-type\2d-singular\matrixup.npy', up_total)
-    np.save(r'DeepONet-type\2d-singular\index_of_u.npy', index)
-    np.save(r'DeepONet-type\2d-singular\val_of_u.npy', val)
+
+    M = 4 # M-times test-resolution
+    ut_fine = np.zeros((ntest, M*N+1,M*N+1))
+    grid_fine = np.linspace(0,1,N*M+1)
+    X, Y = np.meshgrid(grid_fine, grid_fine)
+    points = np.stack((Y.flatten(), X.flatten()), axis=-1)
+    import test_tfpm_refine
+
+    for k in range(ntest):
+        interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N+1),np.linspace(0, 1, N+1)), f[ntrain+k])
+        f_fine = interpolate_f_2d(points).reshape(N*M+1, N*M+1)
+        _, _, ut, _, _ = test_tfpm_refine.tfpm2d(N*M, f_fine)
+        ut_fine[k] = ut[:]
+    np.savez(r"DeepONet-type\2d-singular\data.npz", f_total=f_total, B_total=B_total, C_total=C_total, up_total=up_total, index=index, val=val, u_test_fine=ut_fine)
