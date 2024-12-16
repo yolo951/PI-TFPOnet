@@ -229,7 +229,6 @@ with torch.no_grad():
     out0 = model0(f_test0, input_loc_test0).reshape(ntest, N*M+1, N*M//2)
     out1 = model1(f_test1, input_loc_test1).reshape(ntest, N*M+1, N*M//2+1)
     pred = torch.concat((out0, out1), dim=-1)
-    plt.savefig('test')
     print('test error on high resolution: relative L2 norm = ', torch.linalg.norm(pred.flatten() - ut_fine.flatten()).item() / torch.linalg.norm(ut_fine.flatten()).item())
     print('test error on high resolution: relative L_infty norm = ', torch.linalg.norm(pred.flatten() -  ut_fine.flatten(), ord=torch.inf).item() / torch.linalg.norm(ut_fine.flatten(), ord=torch.inf).item())
 plt.figure()
