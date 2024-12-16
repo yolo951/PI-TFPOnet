@@ -6,3 +6,10 @@ DeepONet-type/1d-smooth/__pycache__/
 DeepONet-type/2d-smooth/__pycache__/
 DeepONet-type/2d-singular/__pycache__/
 DeepONet-type/2d-smooth/matrixU.npy
+DeepONet-type/2d-singular/generate_interface_extra_data.py
+DeepONet-type/2d-singular/generate_node_extra_data.py
+DeepONet-type/2d-singular/test_tfpm_refine_copy.py
+DeepONet-type/2d-singular/test_tfpm_refine.py
+DeepONet-type/2d-singular/test.py
+DeepONet-type/2d-singular/test_tfpm_refine_copy.py
+DeepONet-type/2d-square
