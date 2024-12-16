@@ -53,7 +53,7 @@ def b(x,y):
         a = 0
     return a
 
-N = 16
+N = 32
 ntrain = 1000  
 ntest = 200
 ntotal = ntrain + ntest
@@ -61,37 +61,38 @@ alpha = 1 #interface jump
 beta = 0
 eps = 1.0   # We multiply both sides of the equation by 1/eps, so eps here can be 1.0
 
-epochs = 100
+epochs = 5000
+epochs1 = 5000
 learning_rate = 0.001
 batch_size = 32
-step_size = 2000
+step_size = 1000
 gamma = 0.5
 model = DNN([(N+1)**2,512,256,128,128,256,512,4*N**2]).to(device)
 # model = encoder_decoder().to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
-f = np.load(r'DeepONet-type\2d-singular\f.npy')
-f /= 1000.0
-f_total = np.load(r'DeepONet-type\2d-singular\matrixf.npy')
-f_total /= 1000.0
 # U_total = np.load(r'DeepONet-type\2d-singular\matrixU.npy')
-index_of_u = np.load(r'DeepONet-type\2d-singular\index_of_u.npy')
-val_of_u = np.load(r'DeepONet-type\2d-singular\val_of_u.npy')
-B_total = np.load(r'DeepONet-type\2d-singular\vectorB.npy')
-C_total = np.load(r'DeepONet-type\2d-singular\vectorC.npy')
-up_total = np.load(r'DeepONet-type\2d-singular\matrixup.npy')
+data = np.load(r"DeepONet-type\2d-singular\data.npz")
+f_total = data['f_total']/1000.0
+f = f_total.reshape((ntotal, N+1, N+1))
+B_total, C_total, up_total, index_of_u, val_of_u, ut_fine = data['B_total'], data['C_total'], data['up_total'], data['index'], data['val'], data['u_test_fine']
+extra_data = np.load(r"DeepONet-type\2d-singular\extra_data.npz")
+idx, coeff, rhs = extra_data['idx'], extra_data['coeff'], extra_data['rhs'][:ntrain]
 f_train = torch.tensor(f_total[0:ntrain], dtype=torch.float32).to(device)
 index_of_u = torch.LongTensor(index_of_u).to(device)
 val_of_u = torch.tensor(val_of_u, dtype=torch.float32).to(device)
 B_train = torch.tensor(B_total[0:ntrain], dtype=torch.float32).to(device)
 C_train = torch.tensor(C_total[0:ntrain], dtype=torch.float32).to(device)
 up_train = up_total[0:ntrain]
+idx = torch.LongTensor(idx).to(device)
+coeff = torch.tensor(coeff, dtype=torch.float32).to(device)
+rhs =torch.tensor(rhs, dtype=torch.float32).to(device)
 # U_train = torch.tensor(U_total[0:ntrain], dtype=torch.float32).to(device)
 f_test = torch.tensor(f_total[ntrain:ntotal], dtype=torch.float32).to(device)
 up_test = torch.tensor(up_total[ntrain:ntotal], dtype=torch.float32).to(device)
 C_test = torch.tensor(C_total[ntrain:ntotal], dtype=torch.float32).to(device)
-train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(f_train, B_train, C_train), batch_size=batch_size, shuffle=True)
+train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(f_train, B_train, C_train, rhs), batch_size=batch_size, shuffle=True)
 mseloss = torch.nn.MSELoss()
 
 index_jump = []
@@ -119,7 +120,7 @@ rel_l2_history = []
 for i in range(epochs):
     model.train()
     train_mse = 0
-    for fb, Bb, Cb in train_loader:
+    for fb, Bb, Cb, r in train_loader:
         optimizer.zero_grad()
         Cb_pred = model(fb)
         val_u = val_of_u.unsqueeze(0).repeat(fb.shape[0], 1, 1)
@@ -135,6 +136,16 @@ for i in range(epochs):
         loss_continuous = mseloss(torch.einsum('bri, bri->br', U_continuous, torch.index_select(new_Cb_pred, 1, index_continuous)), B_continuous)
         loss_boundary = mseloss(torch.einsum('bri, bri->br', U_boundary, torch.index_select(new_Cb_pred, 1, index_boundary)), B_boundary)
         loss = 50.0*loss_jump + 50.0*loss_continuous +100.0*loss_boundary
+        # extra loss term
+        if i<=epochs1:
+            loss = 50.0*loss_jump + 50.0*loss_continuous +100.0*loss_boundary
+        else:
+            # Cb_pred_copy=Cb_pred.reshape((32,-1,4))
+            coeff_batch = coeff.unsqueeze(0).repeat(fb.shape[0], 1, 1)
+            loss_extra = mseloss(torch.einsum('bri, bri->br', coeff_batch, torch.index_select(Cb_pred, 1, idx.view(-1)).reshape(coeff_batch.shape)), r)
+            # print(loss_extra.item())
+            loss = 50.0*loss_jump + 50.0*loss_continuous +100.0*loss_boundary
+            loss += 100.0*loss_extra
         loss.backward()                  
         optimizer.step()  
         train_mse += loss.item()
@@ -177,9 +188,8 @@ print('relative l2 error on train data: ',rel_l2)
 C_pred = model(f_test).detach().cpu().reshape(f_test.shape[0], -1)
 up_pred = np.zeros((ntest,N,N))
 
-M = 8 # M-times test-resolution
+M = 4 # M-times test-resolution
 up_refine = np.zeros((ntest, M*N+1,M*N+1))
-ut_refine = np.zeros((ntest, M*N+1,M*N+1))
 for k in range(ntest):
     interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N+1),np.linspace(0, 1, N+1)), f[ntrain+k])
     F = lambda x, y : interpolate_f_2d((x,y))*1000.0
@@ -210,26 +220,17 @@ for k in range(ntest):
             c2p = Cp[4*N*j+4*i+1]
             c3p = Cp[4*N*j+4*i+2]
             c4p = Cp[4*N*j+4*i+3]
-            c1t = Ct[4*N*j+4*i]
-            c2t = Ct[4*N*j+4*i+1]
-            c3t = Ct[4*N*j+4*i+2]
-            c4t = Ct[4*N*j+4*i+3]
             for ki in range(0,M):
                 for kj in range(0,M):
                     xhi = -1/(2*N) + ki*hh
                     xhj = -1/(2*N) + kj*hh
                     up_refine[k, j*M+kj,i*M+ki] = f0/c0 + c1p*np.exp(mu0*xhi) + c2p*np.exp(-mu0*xhi) + c3p*np.exp(mu0*xhj) + c4p*np.exp(-mu0*xhj)
-                    ut_refine[k, j*M+kj,i*M+ki] = f0/c0 + c1t*np.exp(mu0*xhi) + c2t*np.exp(-mu0*xhi) + c3t*np.exp(mu0*xhj) + c4t*np.exp(-mu0*xhj)
     for l in range(0,M*N+1):
         s = l*hh
         up_refine[k, 0,l] = b(s,0)
         up_refine[k, M*N,l] = b(s,1)
         up_refine[k, l,0] = b(0,s)
         up_refine[k, l,M*N] = b(1,s)
-        ut_refine[k, 0,l] = b(s,0)
-        ut_refine[k, M*N,l] = b(s,1)
-        ut_refine[k, l,0] = b(0,s)
-        ut_refine[k, l,M*N] = b(1,s)
 
 k = random.randrange(ntest) # select a random sample from the test dataset to show the error between the true value and the predicted value
 up_test = np.array(up_test.cpu())
@@ -246,14 +247,15 @@ ax.title.set_text('reference solution u(x,y)')
 rel_l2 = np.linalg.norm(up_pred - up_test) / np.linalg.norm(up_test)
 print('relative l2 error on test data: ',rel_l2)
 
-rel_l2 = np.linalg.norm(up_refine - ut_refine) / np.linalg.norm(ut_refine)
-rel_l_infty = np.linalg.norm((up_refine - ut_refine).flatten(), ord=np.inf) / np.linalg.norm(ut_refine.flatten(), ord=np.inf)
+rel_l2 = np.linalg.norm(up_refine - ut_fine) / np.linalg.norm(ut_fine)
+rel_l_infty = np.linalg.norm((up_refine - ut_fine).flatten(), ord=np.inf) / np.linalg.norm(ut_fine.flatten(), ord=np.inf)
 print('relative l2 error on test data (M-times test-resolution): ',rel_l2)
 print('relative l_infty error on test data (M-times test-resolution): ',rel_l_infty)
 
 xh = np.linspace(0,1,N*M+1)
 yh = np.linspace(0,1,N*M+1)
-xxh,yyh = np.meshgrid(xh,yh)
+xxh1, yyh1 = np.meshgrid(xh[:N*M//2], yh)
+xxh2, yyh2 = np.meshgrid(xh[N*M//2+1:], yh)
 
 fig = plt.figure(figsize=(12, 3.5))
 # [left, bottom, width, height]
@@ -263,15 +265,19 @@ ax_cb = fig.add_axes([0.60, 0.1, 0.01, 0.8])
 ax2 = fig.add_axes([0.68, 0.1, 0.25, 0.8])
 ax_cb2 = fig.add_axes([0.94, 0.1, 0.01, 0.8])
 
-vmin = min(up_refine[k].min(), ut_refine[k].min())
-vmax = max(up_refine[k].max(), ut_refine[k].max())
+vmin = min(up_refine[k].min(), ut_fine[k].min())
+vmax = max(up_refine[k].max(), ut_fine[k].max())
 levels = np.linspace(vmin, vmax, 100)
-cs0 = ax0.contourf(xxh, yyh, up_refine[k], levels=levels, cmap='RdYlBu_r')
-cs1 = ax1.contourf(xxh, yyh, ut_refine[k], levels=levels, cmap='RdYlBu_r')
+cs0 = ax0.contourf(xxh1, yyh1, up_refine[k, :, :N*M//2], levels=levels, cmap='RdYlBu_r')
+ax0.contourf(xxh2, yyh2, up_refine[k, :, N*M//2+1:], levels=levels, cmap='RdYlBu_r')
+cs1 = ax1.contourf(xxh1, yyh1, ut_fine[k, :, :N*M//2], levels=levels, cmap='RdYlBu_r')
+ax1.contourf(xxh2, yyh2, ut_fine[k, :, N*M//2+1:], levels=levels, cmap='RdYlBu_r')
 cbar = fig.colorbar(cs0, cax=ax_cb, format='%.3f')
-error = np.abs(up_refine[k]-ut_refine[k])
+error = np.abs(up_refine[k]-ut_fine[k])
+error = np.hstack((error[:, :N*M//2], error[:, N*M//2+1:]))
 levels_error = np.linspace(error.min(), error.max(), 100)
-cs2 = ax2.contourf(xxh, yyh, error, levels=levels_error, cmap='RdYlBu_r')
+cs2 = ax2.contourf(xxh1, yyh1, error[:, :N*M//2], levels=levels_error, cmap='RdYlBu_r')
+ax2.contourf(xxh2, yyh2, error[:, N*M//2:], levels=levels_error, cmap='RdYlBu_r')
 cbar2 = fig.colorbar(cs2, cax=ax_cb2, format='%.3f')
 
 ax0.set_title('Refinement prediction', fontsize=14)
