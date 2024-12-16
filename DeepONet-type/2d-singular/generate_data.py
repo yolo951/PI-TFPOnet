@@ -190,7 +190,7 @@ if __name__ == '__main__':
     eps = 1.0  # We multiply both sides of the equation by 1/eps, so eps here can be 1.0
     f = generate(samples = ntotal, out_dim=N+1, length_scale=1)
     f *= 1000.0
-    np.save(r'DeepONet-type\2d-singular\f.npy', f)
+    np.save(r'DeepONet-type\2d-singular\saved_data\f.npy', f)
 
     k = 0 
     x = np.linspace(0, 1, N+1)
@@ -223,4 +223,4 @@ if __name__ == '__main__':
         f_fine = interpolate_f_2d(points).reshape(N*M+1, N*M+1)
         _, _, ut, _, _ = test_tfpm_refine.tfpm2d(N*M, f_fine)
         ut_fine[k] = ut[:]
-    np.savez(r"DeepONet-type\2d-singular\data.npz", f_total=f_total, B_total=B_total, C_total=C_total, up_total=up_total, index=index, val=val, u_test_fine=ut_fine)
+    np.savez(r"DeepONet-type\2d-singular\saved_data\data.npz", f_total=f_total, B_total=B_total, C_total=C_total, up_total=up_total, index=index, val=val, u_test_fine=ut_fine)
