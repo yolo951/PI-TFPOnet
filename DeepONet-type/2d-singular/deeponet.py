@@ -73,7 +73,7 @@ alpha = 1 #interface jump
 beta = 0
 eps = 1.000
 
-epochs = 500
+epochs = 5000
 learning_rate = 0.001
 batch_size = 50
 step_size = 200
@@ -87,8 +87,8 @@ x = np.linspace(1/(2*N),1-1/(2*N),N)
 xx,yy = np.meshgrid(x,x)
 gridvec = np.hstack((xx.reshape(N**2,1),yy.reshape(N**2,1)))
 
-data = np.load(r"DeepONet-type\2d-singular\data.npz")
-f_total = np.load(r'DeepONet-type\2d-singular\f_centor.npy')
+data = np.load(r"DeepONet-type\2d-singular\saved_data\data.npz")
+f_total = np.load(r'DeepONet-type\2d-singular\saved_data\f_centor.npy')
 up_total = data['up_total']
 ut_fine = data['u_test_fine']
 ut_fine = torch.tensor(ut_fine, dtype=torch.float32).to(device)
@@ -176,9 +176,9 @@ for ep in range(epochs):
         if type=='unsupervised':
             print(10*mse_f.item(), 10*mse_b.item(), mse_i.item())
         print('\repoch {:d}/{:d} , MSE = {:.6f}, relative L2 norm = {:.6f}, using {:.6f}s'.format(ep + 1, epochs, train_mse, rel_l2, t2 - t1), end='', flush=True)
-np.save(r'DeepONet-type\2d-singular\deeponet_loss_history.npy', mse_history)
-np.save(r'DeepONet-type\2d-singular\deeponet_rel_l2_history.npy', rel_l2_history)
-torch.save(model.state_dict(), r'DeepONet-type\2d-singular\deeponet_model_state.pt')
+np.save(r'DeepONet-type\2d-singular\saved_data\{}_deeponet_loss_history.npy'.format(type_), mse_history)
+np.save(r'DeepONet-type\2d-singular\saved_data\{}_deeponet_rel_l2_history.npy'.format(type_), rel_l2_history)
+torch.save(model.state_dict(), r'DeepONet-type\2d-singular\saved_data\{}_deeponet_model_state.pt'.format(type_))
 
 with torch.no_grad(): 
     up_pred = model(f_test, loc_fine)
@@ -191,5 +191,5 @@ plt.xlabel('epochs')
 plt.ylabel('relative l2 error')
 # plt.ylim(1e-3, 1e+2)
 plt.yscale("log")
-plt.savefig(r'DeepONet-type\2d-singular\deeponet_l2.png')
+plt.savefig(r'DeepONet-type\2d-singular\saved_data\{}_deeponet_l2.png'.format(type_))
 plt.show()
