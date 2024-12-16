@@ -1,7 +1,6 @@
 
 import numpy as np
 from scipy import interpolate
-from sklearn import gaussian_process as gp
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
@@ -56,11 +55,7 @@ def c(x,y):
     return a 
 
 def b(x,y):
-    if x >= 1/2:
-        a = 2*(1-x)
-    else:
-        a = 0
-    return a
+    return torch.where(x>=1/2, 2*(1-x), 0.0)
 
 N = 32
 M = 4  # M-times test-resolution
@@ -73,12 +68,12 @@ beta = 0
 eps = 1.0
 
 
-type_ = 'supervised' # supervised
-epochs = 101
+type_ = 'unsupervised' # supervised
+epochs = 2000
 learning_rate = 0.001
-batch_size = 10
-step_size = 1000
-gamma = 0.5
+batch_size = 200
+step_size = 600
+gamma = 0.6
 model0 = DeepONet(half_N*N,2).to(device)
 model1 = DeepONet(half_N*N,2).to(device)
 optimizer0 = torch.optim.Adam(model0.parameters(), lr=learning_rate, weight_decay=1e-4)
@@ -132,19 +127,18 @@ rel_l2_history = []
 input_loc0 = torch.tensor(loc0[ntrain:], dtype=torch.float32).to(device)
 input_loc1 = torch.tensor(loc1[ntrain:], dtype=torch.float32).to(device)
 
-x_b = torch.zeros((1,4*N,2), dtype=torch.float32).to(device)
-y_b = torch.zeros((1,4*N,1), dtype=torch.float32).to(device)
-for k in range(N):
-    x_b[0,k] = torch.tensor([1/(2*N)+k/N,1/(2*N)])
-    x_b[0,N+k] = torch.tensor([1-1/(2*N),1/(2*N)+k/N])
-    x_b[0,2*N+k] = torch.tensor([1/(2*N)+k/N,1-1/(2*N)])
-    x_b[0,3*N+k] = torch.tensor([1/(2*N),1/(2*N)+k/N])
-    y_b[0,k] = torch.tensor([b(1/(2*N)+k/N,0)])
-    y_b[0,N+k] = torch.tensor([b(1,1/(2*N)+k/N)])
-    y_b[0,2*N+k] = torch.tensor([b(1/(2*N)+k/N,1)])
-    y_b[0,3*N+k] = torch.tensor([b(0,1/(2*N)+k/N)])
-x_b = x_b.repeat([batch_size,1,1])
-y_b = y_b.repeat([batch_size,1,1])
+x = torch.tensor(x, dtype=torch.float32).to(device)
+x_b0 = torch.cat((torch.tensor(list(zip(x[:half_N], torch.zeros_like(x[:half_N])))), 
+                  torch.tensor(list(zip(x[:half_N], torch.ones_like(x[:half_N])))),
+                  torch.tensor(list(zip(torch.zeros_like(x), x)))), axis=0)
+x_b1 = torch.cat((torch.tensor(list(zip(x[half_N:], torch.zeros_like(x[half_N:])))), 
+                  torch.tensor(list(zip(x[half_N:], torch.ones_like(x[half_N:])))),
+                  torch.tensor(list(zip(torch.ones_like(x), x)))), axis=0)
+y_b0 = b(x_b0[:, 0], x_b0[:, 1]).unsqueeze(0).unsqueeze(-1).repeat([batch_size,1,1]).to(device)
+y_b1 = b(x_b1[:, 0], x_b1[:, 1]).unsqueeze(0).unsqueeze(-1).repeat([batch_size,1,1]).to(device)
+x_b0 = x_b0.unsqueeze(0).repeat([batch_size,1,1]).to(device)
+x_b1 = x_b1.unsqueeze(0).repeat([batch_size,1,1]).to(device)
+
 xr_i = torch.zeros((1,N,2), dtype=torch.float32).to(device)
 xl_i = torch.zeros((1,N,2), dtype=torch.float32).to(device)
 for k in range(N):
@@ -193,16 +187,16 @@ for ep in range(epochs):
             F = - 0.001*(y_x1x1 + y_x2x2) + Cx1x2*y_pred1 - ff1.unsqueeze(2)
             mse_f1 = torch.mean(F ** 2)
 
-            y_bp0 = model0(ff0,x_b)
-            mse_b0 = mseloss(y_b,y_bp0)
-            y_bp1 = model1(ff1,x_b)
-            mse_b1 = mseloss(y_b,y_bp1)
+            y_bp0 = model0(ff0, x_b0)
+            mse_b0 = mseloss(y_b0, y_bp0)
+            y_bp1 = model1(ff1,x_b1)
+            mse_b1 = mseloss(y_b1, y_bp1)
             
-            # yr = model1(ff1,xr_i)
-            # yl = model0(ff0,xl_i).to(device1)
-            # mse_i = mseloss(yr,yl+1)
-            mse0 = 100*mse_f0+100*mse_b0
-            mse1 = 100*mse_f1 + 100*mse_b1 #+mse_i
+            yr = model1(ff1,xr_i)
+            yl = model0(ff0,xl_i)
+            mse_i = mseloss(yr,yl+1)
+            mse0 = 10*mse_f0 + 10*mse_b0 + 10*mse_i
+            mse1 = 10*mse_f1 + 10*mse_b1
         mse0.backward()
         mse1.backward()
         optimizer0.step()
@@ -213,13 +207,13 @@ for ep in range(epochs):
     train_mse /= len(train_loader)
     t2 = default_timer()
     mse_history.append(train_mse)
-    if ep%100==0:
+    if ep==0 or (ep + 1)%100 ==0:
         out0 = model0(f_test0, input_loc0).reshape(ntest, N, half_N)
         out1 = model1(f_test1, input_loc1).reshape(ntest, N, half_N)
         pred = torch.concat((out0, out1), dim=-1)
         rel_l2 = torch.linalg.norm(pred.flatten() - up_test.flatten()).item() / torch.linalg.norm(up_test.flatten()).item()
         rel_l2_history.append(rel_l2)
-        # print((mse_f0 + mse_f0),100*(mse_b0+mse_b1),mse_i)
+        print(10*(mse_f0 + mse_f0),10*(mse_b0+mse_b1))
         print('epoch {:d}/{:d} , MSE = {:.6f}, rel_l2 = {:.6f}, using {:.6f}s\n'.format(ep + 1, epochs, train_mse, rel_l2, t2 - t1), end='', flush=True)
 np.save('DeepONet-type/2d-singular/saved_data/{}_ionet_loss_history.npy'.format(type_), mse_history)
 np.save('DeepONet-type/2d-singular/saved_data/{}_ionet_rel_l2_history.npy'.format(type_), rel_l2_history)

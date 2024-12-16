@@ -2,7 +2,6 @@
 
 import numpy as np
 from scipy import interpolate
-from sklearn import gaussian_process as gp
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
@@ -57,11 +56,7 @@ def c(x,y):
     return a 
 
 def b(x,y):
-    if x >= 1/2:
-        a = 2*(1-x)
-    else:
-        a = 0
-    return a
+    return torch.where(x>=1/2, 2*(1-x), 0.0)
 
 N = 32
 M = 4  # M-times test-resolution
@@ -73,10 +68,10 @@ alpha = 1 #interface jump
 beta = 0
 eps = 1.000
 
-epochs = 100
+epochs = 10000
 learning_rate = 0.001
-batch_size = 50
-step_size = 200
+batch_size = 200
+step_size = 2000
 gamma = 0.5
 model = DeepONet(N**2,2).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
@@ -87,8 +82,8 @@ x = np.linspace(1/(2*N),1-1/(2*N),N)
 xx,yy = np.meshgrid(x,x)
 gridvec = np.hstack((xx.reshape(N**2,1),yy.reshape(N**2,1)))
 
-data = np.load(r"DeepONet-type\2d-singular\saved_data\data.npz")
-f_total = np.load(r'DeepONet-type\2d-singular\saved_data\f_centor.npy')
+data = np.load("DeepONet-type/2d-singular/saved_data/data.npz")
+f_total = np.load('DeepONet-type/2d-singular/saved_data/f_centor.npy')
 up_total = data['up_total']
 ut_fine = data['u_test_fine']
 ut_fine = torch.tensor(ut_fine, dtype=torch.float32).to(device)
@@ -111,19 +106,15 @@ train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(f_trai
 mseloss = torch.nn.MSELoss(reduction='mean')
 mse_history = []
 rel_l2_history = []
-x_b = torch.zeros((1,4*N,2)).to(device)
-y_b = torch.zeros((1,4*N,1)).to(device)
-for k in range(N):
-    x_b[0,k] = torch.tensor([1/(2*N)+k/N,1/(2*N)])
-    x_b[0,N+k] = torch.tensor([1-1/(2*N),1/(2*N)+k/N])
-    x_b[0,2*N+k] = torch.tensor([1/(2*N)+k/N,1-1/(2*N)])
-    x_b[0,3*N+k] = torch.tensor([1/(2*N),1/(2*N)+k/N])
-    y_b[0,k] = torch.tensor([b(1/(2*N)+k/N,0)])
-    y_b[0,N+k] = torch.tensor([b(1,1/(2*N)+k/N)])
-    y_b[0,2*N+k] = torch.tensor([b(1/(2*N)+k/N,1)])
-    y_b[0,3*N+k] = torch.tensor([b(0,1/(2*N)+k/N)])
-x_b = x_b.repeat([batch_size,1,1])
-y_b = y_b.repeat([batch_size,1,1])
+
+x = torch.tensor(x, dtype=torch.float32).to(device)
+x_b = torch.cat((torch.tensor(list(zip(x, torch.zeros_like(x)))), 
+                  torch.tensor(list(zip(x, torch.ones_like(x)))),
+                  torch.tensor(list(zip(torch.zeros_like(x), x))),
+                  torch.tensor(list(zip(torch.ones_like(x), x)))), axis=0)
+y_b = b(x_b[:, 0], x_b[:, 1]).unsqueeze(0).unsqueeze(-1).repeat([batch_size,1,1]).to(device)
+x_b = x_b.unsqueeze(0).repeat([batch_size,1,1]).to(device)
+
 xr_i = torch.zeros((1,N,2)).to(device)
 xl_i = torch.zeros((1,N,2)).to(device)
 for k in range(N):
@@ -176,9 +167,9 @@ for ep in range(epochs):
         if type=='unsupervised':
             print(10*mse_f.item(), 10*mse_b.item(), mse_i.item())
         print('epoch {:d}/{:d} , MSE = {:.6f}, relative L2 norm = {:.6f}, using {:.6f}s\n'.format(ep + 1, epochs, train_mse, rel_l2, t2 - t1), end='', flush=True)
-np.save(r'DeepONet-type\2d-singular\saved_data\{}_deeponet_loss_history.npy'.format(type_), mse_history)
-np.save(r'DeepONet-type\2d-singular\saved_data\{}_deeponet_rel_l2_history.npy'.format(type_), rel_l2_history)
-torch.save(model.state_dict(), r'DeepONet-type\2d-singular\saved_data\{}_deeponet_model_state.pt'.format(type_))
+np.save('DeepONet-type/2d-singular/saved_data/{}_deeponet_loss_history.npy'.format(type_), mse_history)
+np.save('DeepONet-type/2d-singular/saved_data/{}_deeponet_rel_l2_history.npy'.format(type_), rel_l2_history)
+torch.save(model.state_dict(), 'DeepONet-type/2d-singular/saved_data/{}_deeponet_model_state.pt'.format(type_))
 
 with torch.no_grad(): 
     up_pred = model(f_test, loc_fine)
@@ -191,5 +182,5 @@ plt.xlabel('epochs')
 plt.ylabel('relative l2 error')
 # plt.ylim(1e-3, 1e+2)
 plt.yscale("log")
-plt.savefig(r'DeepONet-type\2d-singular\saved_data\{}_deeponet_l2.png'.format(type_))
+plt.savefig('DeepONet-type/2d-singular/saved_data/{}_deeponet_l2.png'.format(type_))
 plt.show()
