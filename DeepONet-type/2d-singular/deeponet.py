@@ -65,7 +65,7 @@ def b(x,y):
 
 N = 32
 M = 4  # M-times test-resolution
-type_ = 'supervised' # unsupervised
+type_ = 'unsupervised' # unsupervised
 ntrain = 1000 
 ntest = 200
 ntotal = ntrain + ntest
@@ -73,7 +73,7 @@ alpha = 1 #interface jump
 beta = 0
 eps = 1.000
 
-epochs = 5000
+epochs = 100
 learning_rate = 0.001
 batch_size = 50
 step_size = 200
@@ -175,7 +175,7 @@ for ep in range(epochs):
         rel_l2_history.append(rel_l2)
         if type=='unsupervised':
             print(10*mse_f.item(), 10*mse_b.item(), mse_i.item())
-        print('\repoch {:d}/{:d} , MSE = {:.6f}, relative L2 norm = {:.6f}, using {:.6f}s'.format(ep + 1, epochs, train_mse, rel_l2, t2 - t1), end='', flush=True)
+        print('epoch {:d}/{:d} , MSE = {:.6f}, relative L2 norm = {:.6f}, using {:.6f}s\n'.format(ep + 1, epochs, train_mse, rel_l2, t2 - t1), end='', flush=True)
 np.save(r'DeepONet-type\2d-singular\saved_data\{}_deeponet_loss_history.npy'.format(type_), mse_history)
 np.save(r'DeepONet-type\2d-singular\saved_data\{}_deeponet_rel_l2_history.npy'.format(type_), rel_l2_history)
 torch.save(model.state_dict(), r'DeepONet-type\2d-singular\saved_data\{}_deeponet_model_state.pt'.format(type_))
