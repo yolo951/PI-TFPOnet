@@ -86,8 +86,8 @@ optimizer1 = torch.optim.Adam(model1.parameters(), lr=learning_rate, weight_deca
 scheduler0 = torch.optim.lr_scheduler.StepLR(optimizer0, step_size=step_size, gamma=gamma)
 scheduler1 = torch.optim.lr_scheduler.StepLR(optimizer1, step_size=step_size, gamma=gamma)
 
-data = np.load(r"DeepONet-type\2d-singular\saved_data\data.npz")
-f_total = np.load(r'DeepONet-type\2d-singular\saved_data\f_centor.npy').reshape((ntotal, N, N))
+data = np.load("DeepONet-type/2d-singular/saved_data/data.npz")
+f_total = np.load('DeepONet-type/2d-singular/saved_data/f_centor.npy').reshape((ntotal, N, N))
 up_total = data['up_total']
 ut_fine = torch.tensor(data['u_test_fine'], dtype=torch.float32).to(device)
 
@@ -220,10 +220,10 @@ for ep in range(epochs):
         rel_l2 = torch.linalg.norm(pred.flatten() - up_test.flatten()).item() / torch.linalg.norm(up_test.flatten()).item()
         rel_l2_history.append(rel_l2)
         # print((mse_f0 + mse_f0),100*(mse_b0+mse_b1),mse_i)
-        print('\repoch {:d}/{:d} , MSE = {:.6f}, rel_l2 = {:.6f}, using {:.6f}s'.format(ep + 1, epochs, train_mse, rel_l2, t2 - t1), end='', flush=True)
-np.save(r'DeepONet-type\2d-singular\saved_data\{}_ionet_loss_history.npy'.format(type_), mse_history)
-np.save(r'DeepONet-type\2d-singular\saved_data\{}_ionet_rel_l2_history.npy'.format(type_), rel_l2_history)
-torch.save({'model0': model0.state_dict(), 'model1': model1.state_dict()}, r'DeepONet-type\2d-singular\saved_data\{}_ionet_model_state.pth'.format(type_))
+        print('epoch {:d}/{:d} , MSE = {:.6f}, rel_l2 = {:.6f}, using {:.6f}s\n'.format(ep + 1, epochs, train_mse, rel_l2, t2 - t1), end='', flush=True)
+np.save('DeepONet-type/2d-singular/saved_data/{}_ionet_loss_history.npy'.format(type_), mse_history)
+np.save('DeepONet-type/2d-singular/saved_data/{}_ionet_rel_l2_history.npy'.format(type_), rel_l2_history)
+torch.save({'model0': model0.state_dict(), 'model1': model1.state_dict()}, 'DeepONet-type/2d-singular/saved_data/{}_ionet_model_state.pth'.format(type_))
 
 with torch.no_grad():
     out0 = model0(f_test0, input_loc_test0).reshape(ntest, N*M+1, N*M//2)
@@ -238,6 +238,6 @@ plt.xlabel('epochs')
 plt.ylabel('relative l2 error')
 # plt.ylim(1e-3, 1e+2)
 plt.yscale("log")
-plt.savefig(r'DeepONet-type\2d-singular\saved_data\{}_ionet_l2.png'.format(type_))
+plt.savefig('DeepONet-type/2d-singular/saved_data/{}_ionet_l2.png'.format(type_))
 plt.show()
 
