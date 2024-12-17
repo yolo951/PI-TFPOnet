@@ -68,11 +68,11 @@ alpha = 1 #interface jump
 beta = 0
 eps = 1.000
 
-epochs = 10000
+epochs = 20000
 learning_rate = 0.001
 batch_size = 250
 step_size = 2000
-gamma = 0.5
+gamma = 0.6
 model = DeepONet(N**2,2).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
@@ -147,7 +147,7 @@ for ep in range(epochs):
             yl = model(x,xl_i)
             mse_i = mseloss(yr,yl+1)
             
-            mse = 10*mse_f + 10*mse_b + mse_i
+            mse = mse_f + 50.0*mse_b + 50.0*mse_i
         mse.backward()
         optimizer.step()
         train_mse += mse.item()
@@ -159,8 +159,8 @@ for ep in range(epochs):
         up_pred = model(f_test, loc_test)
         rel_l2 = torch.linalg.norm(up_pred.flatten() - up_test.flatten()).item() / torch.linalg.norm(up_test.flatten()).item()
         rel_l2_history.append(rel_l2)
-        if type=='unsupervised':
-            print(10*mse_f.item(), 10*mse_b.item(), mse_i.item())
+        if type_=='unsupervised':
+            print(mse_f.item(), 50.0*mse_b.item(), 50.0*mse_i.item())
         print('epoch {:d}/{:d} , MSE = {:.6f}, relative L2 norm = {:.6f}, using {:.6f}s\n'.format(ep + 1, epochs, train_mse, rel_l2, t2 - t1), end='', flush=True)
 np.save('DeepONet-type/2d-singular/saved_data/{}_deeponet_loss_history.npy'.format(type_), mse_history)
 np.save('DeepONet-type/2d-singular/saved_data/{}_deeponet_rel_l2_history.npy'.format(type_), rel_l2_history)

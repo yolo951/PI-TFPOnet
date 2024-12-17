@@ -68,11 +68,11 @@ beta = 0
 eps = 1.0
 
 
-type_ = 'unsupervised' # supervised
-epochs = 2000
+type_ = 'supervised' # supervised
+epochs = 20000
 learning_rate = 0.001
 batch_size = 200
-step_size = 600
+step_size = 2000
 gamma = 0.6
 model0 = DeepONet(half_N*N,2).to(device)
 model1 = DeepONet(half_N*N,2).to(device)
@@ -207,7 +207,8 @@ for ep in range(epochs):
         pred = torch.concat((out0, out1), dim=-1)
         rel_l2 = torch.linalg.norm(pred.flatten() - up_test.flatten()).item() / torch.linalg.norm(up_test.flatten()).item()
         rel_l2_history.append(rel_l2)
-        print(10*(mse_f0 + mse_f0),10*(mse_b0+mse_b1))
+        if type_=='unsupervised':
+            print(10*(mse_f0.item() + mse_f0.item()),10*(mse_b0.item()+mse_b1.item()), mse_i.item())
         print('epoch {:d}/{:d} , MSE = {:.6f}, rel_l2 = {:.6f}, using {:.6f}s\n'.format(ep + 1, epochs, train_mse, rel_l2, t2 - t1), end='', flush=True)
 np.save('DeepONet-type/2d-singular/saved_data/{}_ionet_loss_history.npy'.format(type_), mse_history)
 np.save('DeepONet-type/2d-singular/saved_data/{}_ionet_rel_l2_history.npy'.format(type_), rel_l2_history)
