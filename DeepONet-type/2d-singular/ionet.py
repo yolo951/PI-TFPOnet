@@ -139,13 +139,7 @@ y_b1 = b(x_b1[:, 0], x_b1[:, 1]).unsqueeze(0).unsqueeze(-1).repeat([batch_size,1
 x_b0 = x_b0.unsqueeze(0).repeat([batch_size,1,1]).to(device)
 x_b1 = x_b1.unsqueeze(0).repeat([batch_size,1,1]).to(device)
 
-xr_i = torch.zeros((1,N,2), dtype=torch.float32).to(device)
-xl_i = torch.zeros((1,N,2), dtype=torch.float32).to(device)
-for k in range(N):
-    xr_i[0,k] = torch.tensor([1/2+0.01,1/(2*N)+k/N])
-    xl_i[0,k] = torch.tensor([1/2-0.01,1/(2*N)+k/N])
-xr_i = xr_i.repeat([batch_size,1,1])
-xl_i = xl_i.repeat([batch_size,1,1])
+x_i = torch.tensor(list(zip(0.5*torch.ones_like(x), x))).unsqueeze(0).repeat([batch_size,1,1]).to(device)
 
 for ep in range(epochs):
     model0.train()
@@ -192,8 +186,8 @@ for ep in range(epochs):
             y_bp1 = model1(ff1,x_b1)
             mse_b1 = mseloss(y_b1, y_bp1)
             
-            yr = model1(ff1,xr_i)
-            yl = model0(ff0,xl_i)
+            yr = model1(ff1, x_i)
+            yl = model0(ff0, x_i)
             mse_i = mseloss(yr,yl+1)
             mse0 = 10*mse_f0 + 10*mse_b0 + 10*mse_i
             mse1 = 10*mse_f1 + 10*mse_b1

@@ -70,7 +70,7 @@ eps = 1.000
 
 epochs = 10000
 learning_rate = 0.001
-batch_size = 200
+batch_size = 250
 step_size = 2000
 gamma = 0.5
 model = DeepONet(N**2,2).to(device)
@@ -115,13 +115,8 @@ x_b = torch.cat((torch.tensor(list(zip(x, torch.zeros_like(x)))),
 y_b = b(x_b[:, 0], x_b[:, 1]).unsqueeze(0).unsqueeze(-1).repeat([batch_size,1,1]).to(device)
 x_b = x_b.unsqueeze(0).repeat([batch_size,1,1]).to(device)
 
-xr_i = torch.zeros((1,N,2)).to(device)
-xl_i = torch.zeros((1,N,2)).to(device)
-for k in range(N):
-    xr_i[0,k] = torch.tensor([1/2+0.01,1/(2*N)+k/N])
-    xl_i[0,k] = torch.tensor([1/2-0.01,1/(2*N)+k/N])
-xr_i = xr_i.repeat([batch_size,1,1])
-xl_i = xl_i.repeat([batch_size,1,1])
+xr_i = torch.tensor(list(zip(0.51*torch.ones_like(x), x))).unsqueeze(0).repeat([batch_size,1,1]).to(device)
+xl_i = torch.tensor(list(zip(0.49*torch.ones_like(x), x))).unsqueeze(0).repeat([batch_size,1,1]).to(device)
 
 for ep in range(epochs):
     model.train()
