@@ -65,7 +65,7 @@ epochs = 5000
 epochs1 = 5000
 learning_rate = 0.001
 batch_size = 32
-step_size = 1000
+step_size = 2000
 gamma = 0.5
 model = DNN([(N+1)**2,512,256,128,128,256,512,4*N**2]).to(device)
 # model = encoder_decoder().to(device)
@@ -286,7 +286,7 @@ ax2.set_title('Point-wise error', fontsize=14)
 
 for ax in [ax0, ax1, ax2]:
     ax.set_aspect('equal')
-plt.savefig(r'DeepONet-type\2d-singular\saved_data\2d_singular_compare.png')
+# plt.savefig(r'DeepONet-type\2d-singular\saved_data\2d_singular_compare.png')
 
 plt.figure()
 plt.plot(loss_history)
