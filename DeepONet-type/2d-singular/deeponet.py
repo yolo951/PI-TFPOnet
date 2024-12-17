@@ -60,7 +60,7 @@ def b(x,y):
 
 N = 32
 M = 4  # M-times test-resolution
-type_ = 'supervised' # unsupervised
+type_ = 'unsupervised' # unsupervised
 ntrain = 1000 
 ntest = 200
 ntotal = ntrain + ntest
