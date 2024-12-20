@@ -13,3 +13,4 @@ DeepONet-type/2d-singular/test_tfpm_refine.py
 DeepONet-type/2d-singular/test.py
 DeepONet-type/2d-singular/test_tfpm_refine_copy.py
 DeepONet-type/2d-square
+DeepONet-type/2d-smooth/test.py
