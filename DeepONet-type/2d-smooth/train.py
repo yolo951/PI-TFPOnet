@@ -1,7 +1,7 @@
 
 import numpy as np
 from scipy import interpolate
-from sklearn import gaussian_process as gp
+# from sklearn import gaussian_process as gp
 import matplotlib.pyplot as plt
 import torch
 from collections import OrderedDict
@@ -61,12 +61,12 @@ alpha = 1 #interface jump
 beta = 0
 eps = 1.0
 
-epochs = 5000
+epochs = 10000
 learning_rate = 0.001
-batch_size = 32
-step_size = 1500
+batch_size = 128
+step_size = 1000
 gamma = 0.6
-model = DNN([(N+1)**2,512,256,128,128,256,512,4*N**2]).to(device)
+model = DNN([(N+1)**2,512,256,256,512,4*N**2]).to(device)
 # model = encoder_decoder().to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
