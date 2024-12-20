@@ -1,5 +1,4 @@
 
-
 import numpy as np
 from scipy import interpolate
 from sklearn import gaussian_process as gp
@@ -7,6 +6,8 @@ import matplotlib.pyplot as plt
 import torch
 from collections import OrderedDict
 from scipy import interpolate
+from scipy import sparse
+from scipy.sparse import linalg
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def generate(samples=10, begin=0, end=1, random_dim=101, out_dim=101, length_scale=1, interp="cubic", A=0):
@@ -49,9 +50,6 @@ class GRF(object):
                 x,y)
         return res
 
-
-
-
 def c(x,y):
     if x < 1/2:
         a = 16
@@ -68,7 +66,6 @@ def b(x,y):
     
 def tfpm2d(N,f): 
     h = 1/(2*N)
-    U = np.zeros((4*N**2,4*N**2))
     index = np.zeros((4*N**2, 8))
     val = np.zeros((4*N**2, 8))
     B = np.zeros(4*N**2)
@@ -83,7 +80,6 @@ def tfpm2d(N,f):
         c0 = c(x0,y0)
         mu0 = np.sqrt(c0)/eps
         xi = (2*i+1)*h
-        U[i,[4*i,4*i+1,4*i+2,4*i+3]] = np.array([np.exp(-mu0*h),np.exp(-mu0*h),np.exp(-2*mu0*h),1])
         index[i, :4] = np.array([4*i,4*i+1,4*i+2,4*i+3])
         val[i, :4] = np.array([np.exp(-mu0*h),np.exp(-mu0*h),np.exp(-2*mu0*h),1])
         B[i] = (- f0/c0 + b(xi,0))*np.exp(-mu0*h)
@@ -95,7 +91,6 @@ def tfpm2d(N,f):
         c0 = c(x0,y0)
         mu0 = np.sqrt(c0)/eps
         xi = (2*i+1)*h
-        U[N+i,[4*N*(N-1)+4*i,4*N*(N-1)+4*i+1,4*N*(N-1)+4*i+2,4*N*(N-1)+4*i+3]] = np.array([np.exp(-mu0*h),np.exp(-mu0*h),1,np.exp(-2*mu0*h)])
         index[N+i, :4] = np.array([4*N*(N-1)+4*i,4*N*(N-1)+4*i+1,4*N*(N-1)+4*i+2,4*N*(N-1)+4*i+3])
         val[N+i, :4] = np.array([np.exp(-mu0*h),np.exp(-mu0*h),1,np.exp(-2*mu0*h)])
         B[N+i] = (- f0/c0 + b(xi,1))*np.exp(-mu0*h)
@@ -107,7 +102,6 @@ def tfpm2d(N,f):
         c0 = c(x0,y0)
         mu0 = np.sqrt(c0)/eps
         yi = (2*i+1)*h
-        U[2*N+i,[4*N*i,4*N*i+1,4*N*i+2,4*N*i+3]] = np.array([np.exp(-2*mu0*h),1,np.exp(-mu0*h),np.exp(-mu0*h)])
         index[2*N+i, :4] = np.array([4*N*i,4*N*i+1,4*N*i+2,4*N*i+3])
         val[2*N+i, :4] = np.array([np.exp(-2*mu0*h),1,np.exp(-mu0*h),np.exp(-mu0*h)])
         B[2*N+i] = (- f0/c0 + b(0,yi))*np.exp(-mu0*h)
@@ -119,7 +113,6 @@ def tfpm2d(N,f):
         c0 = c(x0,y0)
         mu0 = np.sqrt(c0)/eps
         yi = (2*i+1)*h
-        U[3*N+i,[4*N*(i+1)-4,4*N*(i+1)-3,4*N*(i+1)-2,4*N*(i+1)-1]] = np.array([1,np.exp(-2*mu0*h),np.exp(-mu0*h),np.exp(-mu0*h)])
         index[3*N+i, :4] = np.array([4*N*(i+1)-4,4*N*(i+1)-3,4*N*(i+1)-2,4*N*(i+1)-1])
         val[3*N+i, :4] = np.array([1,np.exp(-2*mu0*h),np.exp(-mu0*h),np.exp(-mu0*h)])
         B[3*N+i] = (- f0/c0 + b(1,yi))*np.exp(-mu0*h)
@@ -136,11 +129,9 @@ def tfpm2d(N,f):
             c1 = c(x1,y0)
             mu1 = np.sqrt(c1)/eps
             mu = max(mu0,mu1)
-            U[4*N+N*i+j,[4*N*j+4*i,4*N*j+4*i+1,4*N*j+4*i+2,4*N*j+4*i+3,4*N*j+4*i+4,4*N*j+4*i+5,4*N*j+4*i+6,4*N*j+4*i+7]] = np.array([np.exp((mu0-mu)*h),np.exp(-(mu0+mu)*h),np.exp(-mu*h),np.exp(-mu*h),-np.exp(-(mu1+mu)*h),-np.exp((mu1-mu)*h),-np.exp(-mu*h),-np.exp(-mu*h)])
             index[4*N+N*i+j] = np.array([4*N*j+4*i,4*N*j+4*i+1,4*N*j+4*i+2,4*N*j+4*i+3,4*N*j+4*i+4,4*N*j+4*i+5,4*N*j+4*i+6,4*N*j+4*i+7])
             val[4*N+N*i+j] = np.array([np.exp((mu0-mu)*h),np.exp(-(mu0+mu)*h),np.exp(-mu*h),np.exp(-mu*h),-np.exp(-(mu1+mu)*h),-np.exp((mu1-mu)*h),-np.exp(-mu*h),-np.exp(-mu*h)])
             B[4*N+N*i+j] = (f1/c1 - f0/c0)*np.exp(-mu*h)
-            U[4*N+N*(N-1)+N*i+j,[4*N*j+4*i,4*N*j+4*i+1,4*N*j+4*i+2,4*N*j+4*i+3,4*N*j+4*i+4,4*N*j+4*i+5,4*N*j+4*i+6,4*N*j+4*i+7]] = np.array([mu0*np.exp((mu0-mu)*h),-mu0*np.exp(-(mu0+mu)*h),0,0,-mu1*np.exp(-(mu1+mu)*h),mu1*np.exp((mu1-mu)*h),0,0])
             index[4*N+N*(N-1)+N*i+j] = np.array([4*N*j+4*i,4*N*j+4*i+1,4*N*j+4*i+2,4*N*j+4*i+3,4*N*j+4*i+4,4*N*j+4*i+5,4*N*j+4*i+6,4*N*j+4*i+7])
             val[4*N+N*(N-1)+N*i+j] = np.array([mu0*np.exp((mu0-mu)*h),-mu0*np.exp(-(mu0+mu)*h),0,0,-mu1*np.exp(-(mu1+mu)*h),mu1*np.exp((mu1-mu)*h),0,0])
             B[4*N+N*(N-1)+N*i+j] = 0
@@ -161,17 +152,19 @@ def tfpm2d(N,f):
             c1 = c(x0,y1)
             mu1 = np.sqrt(c1)/eps
             mu = max(mu0,mu1)
-            U[4*N+2*N*(N-1)+N*j+i,[4*N*j+4*i,4*N*j+4*i+1,4*N*j+4*i+2,4*N*j+4*i+3,4*N*(j+1)+4*i,4*N*(j+1)+4*i+1,4*N*(j+1)+4*i+2,4*N*(j+1)+4*i+3]] = np.array([np.exp(-mu*h),np.exp(-mu*h),np.exp((mu0-mu)*h),np.exp(-(mu0+mu)*h),-np.exp(-mu*h),-np.exp(-mu*h),-np.exp(-(mu1+mu)*h),-np.exp((mu1-mu)*h)])
             index[4*N+2*N*(N-1)+N*j+i] = np.array([4*N*j+4*i,4*N*j+4*i+1,4*N*j+4*i+2,4*N*j+4*i+3,4*N*(j+1)+4*i,4*N*(j+1)+4*i+1,4*N*(j+1)+4*i+2,4*N*(j+1)+4*i+3])
             val[4*N+2*N*(N-1)+N*j+i] = np.array([np.exp(-mu*h),np.exp(-mu*h),np.exp((mu0-mu)*h),np.exp(-(mu0+mu)*h),-np.exp(-mu*h),-np.exp(-mu*h),-np.exp(-(mu1+mu)*h),-np.exp((mu1-mu)*h)])
             B[4*N+2*N*(N-1)+N*j+i] = (f1/c1 - f0/c0)*np.exp(-mu*h)
-            U[4*N+3*N*(N-1)+N*j+i,[4*N*j+4*i,4*N*j+4*i+1,4*N*j+4*i+2,4*N*j+4*i+3,4*N*(j+1)+4*i,4*N*(j+1)+4*i+1,4*N*(j+1)+4*i+2,4*N*(j+1)+4*i+3]] = np.array([0,0,mu0*np.exp((mu0-mu)*h),-mu0*np.exp(-(mu0+mu)*h),0,0,-mu1*np.exp(-(mu1+mu)*h),mu1*np.exp((mu1-mu)*h)])
             index[4*N+3*N*(N-1)+N*j+i] = np.array([4*N*j+4*i,4*N*j+4*i+1,4*N*j+4*i+2,4*N*j+4*i+3,4*N*(j+1)+4*i,4*N*(j+1)+4*i+1,4*N*(j+1)+4*i+2,4*N*(j+1)+4*i+3])
             val[4*N+3*N*(N-1)+N*j+i] = np.array([0,0,mu0*np.exp((mu0-mu)*h),-mu0*np.exp(-(mu0+mu)*h),0,0,-mu1*np.exp(-(mu1+mu)*h),mu1*np.exp((mu1-mu)*h)])
             B[4*N+3*N*(N-1)+N*j+i] = 0
     
     #计算解
-    C = np.linalg.solve(U,B)
+    U_data = val.flatten()
+    U_row = np.repeat(np.arange(4*N**2), 8)
+    U_col = index.flatten()
+    U_sparse = sparse.csr_matrix((U_data, (U_row, U_col)), shape=(4*N**2, 4*N**2))
+    C = linalg.spsolve(U_sparse, B)
     up = np.zeros((N,N)) #每个网格中心点值，不包含边界
     for i in range(0,N):
         for j in range(0,N):
@@ -185,46 +178,48 @@ def tfpm2d(N,f):
             c3 = C[4*N*j+4*i+2]
             c4 = C[4*N*j+4*i+3]
             up[j,i] = f0/c0 + c1 + c2 + c3 + c4
-    return U, B, C, up, index, val
+    return B, C, up, index, val
 
-N = 16
-ntrain = 1000  
-ntest = 200
-ntotal = ntrain + ntest
-alpha = 1 #interface jump
-beta = 0
-eps = 1.0
-f = generate(samples = ntotal, out_dim=N, length_scale=1)
-np.save(r'DeepONet-type\2d-smooth\f.npy', f)
+if __name__ == '__main__':
+    N = 32
+    ntrain = 1000
+    ntest = 200
+    ntotal = ntrain + ntest
+    alpha = 1 # interface jump
+    beta = 0
+    eps = 1.0
+    f = generate(samples = ntotal, out_dim=N+1, length_scale=1)
+    np.save(r'DeepONet-type\2d-smooth\saved_data\f.npy', f)
 
-k = 0 
-x = np.linspace(1/(2*N),1-1/(2*N),N)
-xx,yy = np.meshgrid(x,x)
-fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-ax.plot_surface(xx, yy, f[k], cmap='rainbow')
-ax.title.set_text('generated f(x,y)')
-plt.show()
+    k = 0 
+    x = np.linspace(0, 1, N+1)
+    xx,yy = np.meshgrid(x,x)
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    ax.plot_surface(xx, yy, f[k], cmap='rainbow')
+    ax.title.set_text('generated f(x,y)')
+    plt.show()
 
-# U_total = np.zeros((ntotal,4*N**2,4*N**2), dtype=np.float32)
-B_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
-C_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
-up_total = np.zeros((ntotal,N,N), dtype=np.float32)
-f_total = np.zeros((ntotal,N**2), dtype=np.float32)
-index = np.zeros((ntotal, 4*N**2, 8), dtype=np.float32)
-val = np.zeros((ntotal, 4*N**2, 8), dtype=np.float32)
-for k in range(ntotal):
-    U, B, C, up, idx, v = tfpm2d(N,f[k])
-    # U_total[k] = U
-    B_total[k] = B
-    C_total[k] = C
-    up_total[k] = up
-    index[k] = idx
-    val[k] = v
-    f_total[k] = f[k].reshape(-1)
-np.save(r'DeepONet-type\2d-smooth\matrixf.npy', f_total)
-# np.save(r'DeepONet-type\2d-smooth\matrixU.npy', U_total)
-np.save(r'DeepONet-type\2d-smooth\vectorB.npy', B_total)
-np.save(r'DeepONet-type\2d-smooth\vectorC.npy', C_total)
-np.save(r'DeepONet-type\2d-smooth\matrixup.npy', up_total)
-np.save(r'DeepONet-type\2d-smooth\index_of_u.npy', index)
-np.save(r'DeepONet-type\2d-smooth\val_of_u.npy', val)
+    B_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
+    C_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
+    up_total = np.zeros((ntotal,N,N), dtype=np.float32)
+    f_total = np.zeros((ntotal,(N+1)**2), dtype=np.float32)
+    for k in range(ntotal):
+        B, C, up, index, val = tfpm2d(N,f[k])
+        B_total[k] = B
+        C_total[k] = C
+        up_total[k] = up
+        f_total[k] = f[k].reshape(-1)
+
+    M = 4 # M-times test-resolution
+    ut_fine = np.zeros((ntest, M*N+1,M*N+1))
+    grid_fine = np.linspace(0,1,N*M+1)
+    X, Y = np.meshgrid(grid_fine, grid_fine)
+    points = np.stack((Y.flatten(), X.flatten()), axis=-1)
+    import tfpm_refine
+
+    for k in range(ntest):
+        interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N+1),np.linspace(0, 1, N+1)), f[ntrain+k])
+        f_fine = interpolate_f_2d(points).reshape(N*M+1, N*M+1)
+        _, _, ut, _, _ = tfpm_refine.tfpm2d(N*M, f_fine)
+        ut_fine[k] = ut[:]
+    np.savez(r"DeepONet-type\2d-smooth\saved_data\data.npz", f_total=f_total, B_total=B_total, C_total=C_total, up_total=up_total, index=index, val=val, u_test_fine=ut_fine)
