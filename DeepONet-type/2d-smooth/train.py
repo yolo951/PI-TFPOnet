@@ -62,9 +62,9 @@ beta = 0
 eps = 1.0
 
 epochs = 10000
-learning_rate = 0.001
-batch_size = 128
-step_size = 1000
+learning_rate = 0.0002
+batch_size = 64
+step_size = 2000
 gamma = 0.6
 model = DNN([(N+1)**2,512,256,256,512,4*N**2]).to(device)
 # model = encoder_decoder().to(device)
