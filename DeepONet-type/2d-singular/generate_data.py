@@ -59,9 +59,9 @@ def c(x,y):
 
 def b(x,y):
     if x >= 1/2:
-        a = 2*(1-x)
+        a = 1-x
     else:
-        a = 0
+        a = -x
     return a
     
 def tfpm2d(N,f): 
@@ -188,9 +188,10 @@ if __name__ == '__main__':
     alpha = 1 # interface jump
     beta = 0
     eps = 1.0  # We multiply both sides of the equation by 1/eps, so eps here can be 1.0
-    f = generate(samples = ntotal, out_dim=N+1, length_scale=1)
-    f *= 1000.0
-    np.save(r'DeepONet-type\2d-singular\saved_data\f.npy', f)
+    # f = generate(samples = ntotal, out_dim=N+1, length_scale=1)
+    # f *= 1000.0
+    # np.save(r'DeepONet-type\2d-singular\saved_data\f.npy', f)
+    f = np.load(r'DeepONet-type\2d-singular\saved_data\f.npy')
 
     k = 0 
     x = np.linspace(0, 1, N+1)
