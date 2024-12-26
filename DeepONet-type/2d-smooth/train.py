@@ -48,9 +48,9 @@ def c(x,y):
 
 def b(x,y):
     if x >= 1/2:
-        a = 2*(1-x)
+        a = 1-x
     else:
-        a = 0
+        a = -x
     return a
 
 N = 32
