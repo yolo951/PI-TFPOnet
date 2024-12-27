@@ -59,18 +59,19 @@ def c(x,y):
 
 def b(x,y):
     if x >= 1/2:
-        a = 1-x
+        a = 2*(1-x)
     else:
-        a = -x
+        a = 0
     return a
     
-def tfpm2d(N,f): 
+def tfpm2d(N, f, interface): 
     h = 1/(2*N)
     index = np.zeros((4*N**2, 8))
     val = np.zeros((4*N**2, 8))
     B = np.zeros(4*N**2)
     interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, f.shape[-1]),np.linspace(0, 1, f.shape[-1])), f)
     F = lambda x, y : interpolate_f_2d((x,y))
+    left, right, buttom, top = interface['vertical_left'], interface['vertical_right'], interface['horizontal_buttom'], interface['horizontal_top']
     
     #boundary y=0.
     for i in range(0,N):
@@ -117,6 +118,7 @@ def tfpm2d(N,f):
         val[3*N+i, :4] = np.array([1,np.exp(-2*mu0*h),np.exp(-mu0*h),np.exp(-mu0*h)])
         B[3*N+i] = (- f0/c0 + b(1,yi))*np.exp(-mu0*h)
     
+    
     for i in range(0,N-1):
         for j in range(0,N):
             x0 = (2*i+1)*h
@@ -129,16 +131,22 @@ def tfpm2d(N,f):
             c1 = c(x1,y0)
             mu1 = np.sqrt(c1)/eps
             mu = max(mu0,mu1)
+            # continuous condition of u
             index[4*N+N*i+j] = np.array([4*N*j+4*i,4*N*j+4*i+1,4*N*j+4*i+2,4*N*j+4*i+3,4*N*j+4*i+4,4*N*j+4*i+5,4*N*j+4*i+6,4*N*j+4*i+7])
             val[4*N+N*i+j] = np.array([np.exp((mu0-mu)*h),np.exp(-(mu0+mu)*h),np.exp(-mu*h),np.exp(-mu*h),-np.exp(-(mu1+mu)*h),-np.exp((mu1-mu)*h),-np.exp(-mu*h),-np.exp(-mu*h)])
             B[4*N+N*i+j] = (f1/c1 - f0/c0)*np.exp(-mu*h)
+            # continuous condition of du
             index[4*N+N*(N-1)+N*i+j] = np.array([4*N*j+4*i,4*N*j+4*i+1,4*N*j+4*i+2,4*N*j+4*i+3,4*N*j+4*i+4,4*N*j+4*i+5,4*N*j+4*i+6,4*N*j+4*i+7])
             val[4*N+N*(N-1)+N*i+j] = np.array([mu0*np.exp((mu0-mu)*h),-mu0*np.exp(-(mu0+mu)*h),0,0,-mu1*np.exp(-(mu1+mu)*h),mu1*np.exp((mu1-mu)*h),0,0])
             B[4*N+N*(N-1)+N*i+j] = 0
             #interface
-            if i==int(N/2)-1: 
+            if (i, j) in left:
                 B[4*N+N*i+j] = B[4*N+N*i+j] - alpha*np.exp(-mu*h)
                 B[4*N+N*(N-1)+N*i+j] = B[4*N+N*(N-1)+N*i+j] - beta*np.exp(-mu*h)
+            elif (i, j) in right:
+                B[4*N+N*i+j] = B[4*N+N*i+j] + alpha*np.exp(-mu*h)
+                B[4*N+N*(N-1)+N*i+j] = B[4*N+N*(N-1)+N*i+j] + beta*np.exp(-mu*h)
+
     
     for i in range(0,N):
         for j in range(0,N-1):
@@ -152,12 +160,21 @@ def tfpm2d(N,f):
             c1 = c(x0,y1)
             mu1 = np.sqrt(c1)/eps
             mu = max(mu0,mu1)
+            # continuous condition of u
             index[4*N+2*N*(N-1)+N*j+i] = np.array([4*N*j+4*i,4*N*j+4*i+1,4*N*j+4*i+2,4*N*j+4*i+3,4*N*(j+1)+4*i,4*N*(j+1)+4*i+1,4*N*(j+1)+4*i+2,4*N*(j+1)+4*i+3])
             val[4*N+2*N*(N-1)+N*j+i] = np.array([np.exp(-mu*h),np.exp(-mu*h),np.exp((mu0-mu)*h),np.exp(-(mu0+mu)*h),-np.exp(-mu*h),-np.exp(-mu*h),-np.exp(-(mu1+mu)*h),-np.exp((mu1-mu)*h)])
             B[4*N+2*N*(N-1)+N*j+i] = (f1/c1 - f0/c0)*np.exp(-mu*h)
+            # continuous condition of du
             index[4*N+3*N*(N-1)+N*j+i] = np.array([4*N*j+4*i,4*N*j+4*i+1,4*N*j+4*i+2,4*N*j+4*i+3,4*N*(j+1)+4*i,4*N*(j+1)+4*i+1,4*N*(j+1)+4*i+2,4*N*(j+1)+4*i+3])
             val[4*N+3*N*(N-1)+N*j+i] = np.array([0,0,mu0*np.exp((mu0-mu)*h),-mu0*np.exp(-(mu0+mu)*h),0,0,-mu1*np.exp(-(mu1+mu)*h),mu1*np.exp((mu1-mu)*h)])
             B[4*N+3*N*(N-1)+N*j+i] = 0
+            #interface
+            if (i, j) in buttom:
+                B[4*N+2*N*(N-1)+N*j+i] = B[4*N+2*N*(N-1)+N*j+i] - alpha*np.exp(-mu*h)
+                B[4*N+3*N*(N-1)+N*j+i] = B[4*N+3*N*(N-1)+N*j+i] - beta*np.exp(-mu*h)
+            elif (i, j) in top:
+                B[4*N+2*N*(N-1)+N*j+i] = B[4*N+2*N*(N-1)+N*j+i] + alpha*np.exp(-mu*h)
+                B[4*N+3*N*(N-1)+N*j+i] = B[4*N+3*N*(N-1)+N*j+i] + beta*np.exp(-mu*h)
     
     #计算解
     U_data = val.flatten()
@@ -182,46 +199,78 @@ def tfpm2d(N,f):
 
 if __name__ == '__main__':
     N = 32
-    ntrain = 1000  
-    ntest = 200
+    ntrain = 1
+    ntest = 0
     ntotal = ntrain + ntest
-    alpha = 1 # interface jump
+    alpha = 1.0 # interface jump
     beta = 0
     eps = 1.0  # We multiply both sides of the equation by 1/eps, so eps here can be 1.0
-    # f = generate(samples = ntotal, out_dim=N+1, length_scale=1)
-    # f *= 1000.0
-    # np.save(r'DeepONet-type\2d-singular\saved_data\f.npy', f)
-    f = np.load(r'DeepONet-type\2d-singular\saved_data\f.npy')
+    f = generate(samples = ntotal, out_dim=N+1, length_scale=1)
+    f *= 1000.0
+    np.save(r'DeepONet-type\2d-L-shaped\saved_data\f.npy', f)
 
-    k = 0 
-    x = np.linspace(0, 1, N+1)
-    xx,yy = np.meshgrid(x,x)
-    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    ax.plot_surface(xx, yy, f[k], cmap='rainbow')
-    ax.title.set_text('generated f(x,y)')
-    plt.show()
+    # k = 0 
+    # x = np.linspace(0, 1, N+1)
+    # xx,yy = np.meshgrid(x,x)
+    # fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    # ax.plot_surface(xx, yy, f[k], cmap='rainbow')
+    # ax.title.set_text('generated f(x,y)')
+    # plt.show()
 
     B_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
     C_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
     up_total = np.zeros((ntotal,N,N), dtype=np.float32)
     f_total = np.zeros((ntotal,(N+1)**2), dtype=np.float32)
+    vertical_left = set([(N//4-1, j) for j in range(N//4, N*3//4)])
+    vertical_right = set([(N//2-1, j) for j in range(N//2, N*3//4)])|set([(N*3//4-1, j) for j in range(N//4, N//2)])
+    horizontal_buttom = set([(i, N//4-1) for i in range(N//4, N*3//4)])
+    horizontal_top = set([(i, N//2-1) for i in range(N//2, N*3//4)])|set([(i, N*3//4-1) for i in range(N//4, N//2)])
+    interface = {'vertical_left': vertical_left, 'vertical_right': vertical_right, 
+                 'horizontal_buttom': horizontal_buttom, 'horizontal_top': horizontal_top}
     for k in range(ntotal):
-        B, C, up, index, val = tfpm2d(N,f[k])
+        B, C, up, index, val = tfpm2d(N, f[k], interface)
         B_total[k] = B
         C_total[k] = C
         up_total[k] = up
         f_total[k] = f[k].reshape(-1)
+
+    # index of L-shaped
+    idx_y = [[N//4+i]*(N//2) for i in range(0, N//4)] + [[N//2+i]*(N//4) for i in range(0, N//4)]
+    idx_y_remain = [[i]*N for i in range(0, N//4)] + [[N//4+i]*(N//2) for i in range(0, N//4)]\
+                    + [[N//2+i]*(N*3//4) for i in range(0, N//4)] + [[N*3//4+i]*N for i in range(0, N//4)]
+    idx_y = np.concatenate(idx_y)
+    idx_y_remain = np.concatenate(idx_y_remain)
+    idx_x = [N//4+j for j in range(N // 2)]*(N//4) + [N//4+j for j in range(N//4)]*(N//4)
+    idx_x_remain = np.hstack((np.array([j for j in range(N)]*(N//4)),
+                            np.concatenate([[j for j in range(N//4)]+[j for j in range(N*3//4, N)]]*(N//4)), 
+                            np.concatenate([[j for j in range(N//4)]+[j for j in range(N//2, N)]]*(N//4)),
+                            np.array([j for j in range(N)]*(N//4))))
+    idx_x = np.array(idx_x)
+
+    x = np.linspace(1/2/N, 1-1/2/N, N)
+    xx, yy = np.meshgrid(x, x)
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    # plot inner L-shaped area
+    Z_full = np.full_like(xx, np.nan, dtype=float)
+    Z_full[idx_y, idx_x] = up_total[0, idx_y, idx_x]
+    ax.plot_surface(xx, yy, Z_full, cmap='rainbow')
+    # plot remaining area
+    Z_full = np.full_like(xx, np.nan, dtype=float)
+    Z_full[idx_y_remain, idx_x_remain] = up_total[0, idx_y_remain, idx_x_remain]
+    ax.plot_surface(xx, yy, Z_full, cmap='rainbow')
+    ax.title.set_text('generated f(x,y)')
+    plt.show()
 
     M = 4 # M-times test-resolution
     ut_fine = np.zeros((ntest, M*N+1,M*N+1))
     grid_fine = np.linspace(0,1,N*M+1)
     X, Y = np.meshgrid(grid_fine, grid_fine)
     points = np.stack((Y.flatten(), X.flatten()), axis=-1)
-    import test_tfpm_refine
+    # import test_tfpm_refine
 
-    for k in range(ntest):
-        interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N+1),np.linspace(0, 1, N+1)), f[ntrain+k])
-        f_fine = interpolate_f_2d(points).reshape(N*M+1, N*M+1)
-        _, _, ut, _, _ = test_tfpm_refine.tfpm2d(N*M, f_fine)
-        ut_fine[k] = ut[:]
-    np.savez(r"DeepONet-type\2d-singular\saved_data\data.npz", f_total=f_total, B_total=B_total, C_total=C_total, up_total=up_total, index=index, val=val, u_test_fine=ut_fine)
+    # for k in range(ntest):
+    #     interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N+1),np.linspace(0, 1, N+1)), f[ntrain+k])
+    #     f_fine = interpolate_f_2d(points).reshape(N*M+1, N*M+1)
+    #     _, _, ut, _, _ = test_tfpm_refine.tfpm2d(N*M, f_fine)
+    #     ut_fine[k] = ut[:]
+    np.savez(r"DeepONet-type\2d-L-shaped\saved_data\data.npz", f_total=f_total, B_total=B_total, C_total=C_total, up_total=up_total, index=index, val=val, u_test_fine=ut_fine)
