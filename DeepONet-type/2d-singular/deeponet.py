@@ -56,7 +56,7 @@ def c(x,y):
     return a 
 
 def b(x,y):
-    return torch.where(x>=1/2, 2*(1-x), 0.0)
+    return torch.where(x>=1/2, 1-x, -x)
 
 N = 32
 M = 4  # M-times test-resolution
