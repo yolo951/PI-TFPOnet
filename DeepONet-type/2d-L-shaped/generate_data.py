@@ -76,6 +76,7 @@ def tfpm2d(N, f, interface, alpha=1.0, beta=0.0, eps=1.0):
     interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, f.shape[-1]),np.linspace(0, 1, f.shape[-1])), f)
     F = lambda x, y : interpolate_f_2d((x,y))
     left, right, buttom, top = interface['vertical_left'], interface['vertical_right'], interface['horizontal_buttom'], interface['horizontal_top']
+    index_jump = []
     
     #boundary y=0.
     for i in range(0,N):
@@ -147,9 +148,11 @@ def tfpm2d(N, f, interface, alpha=1.0, beta=0.0, eps=1.0):
             if (i, j) in left:
                 B[4*N+N*i+j] = B[4*N+N*i+j] - alpha*np.exp(-mu*h)
                 B[4*N+N*(N-1)+N*i+j] = B[4*N+N*(N-1)+N*i+j] - beta*np.exp(-mu*h)
+                index_jump.extend([4*N+N*i+j, 4*N+N*(N-1)+N*i+j])
             elif (i, j) in right:
                 B[4*N+N*i+j] = B[4*N+N*i+j] + alpha*np.exp(-mu*h)
                 B[4*N+N*(N-1)+N*i+j] = B[4*N+N*(N-1)+N*i+j] + beta*np.exp(-mu*h)
+                index_jump.extend([4*N+N*i+j, 4*N+N*(N-1)+N*i+j])
 
     
     for i in range(0,N):
@@ -176,9 +179,11 @@ def tfpm2d(N, f, interface, alpha=1.0, beta=0.0, eps=1.0):
             if (i, j) in buttom:
                 B[4*N+2*N*(N-1)+N*j+i] = B[4*N+2*N*(N-1)+N*j+i] - alpha*np.exp(-mu*h)
                 B[4*N+3*N*(N-1)+N*j+i] = B[4*N+3*N*(N-1)+N*j+i] - beta*np.exp(-mu*h)
+                index_jump.extend([4*N+2*N*(N-1)+N*j+i, 4*N+3*N*(N-1)+N*j+i])
             elif (i, j) in top:
                 B[4*N+2*N*(N-1)+N*j+i] = B[4*N+2*N*(N-1)+N*j+i] + alpha*np.exp(-mu*h)
                 B[4*N+3*N*(N-1)+N*j+i] = B[4*N+3*N*(N-1)+N*j+i] + beta*np.exp(-mu*h)
+                index_jump.extend([4*N+2*N*(N-1)+N*j+i, 4*N+3*N*(N-1)+N*j+i])
     
     #计算解
     U_data = val.flatten()
@@ -199,7 +204,9 @@ def tfpm2d(N, f, interface, alpha=1.0, beta=0.0, eps=1.0):
             c3 = C[4*N*j+4*i+2]
             c4 = C[4*N*j+4*i+3]
             up[j,i] = f0/c0 + c1 + c2 + c3 + c4
-    return B, C, up, index, val
+    index_boundary = [i for i in range(4*N)]
+    index_continuous = list(set([i for i in range(4*N, 4*N**2)])-set(index_jump))
+    return B, C, up, index, val, index_boundary, index_jump, index_continuous
 
 def generate_interface(N):
     vertical_left = set([(N//4-1, j) for j in range(N//4, N*3//4)])
@@ -237,7 +244,7 @@ if __name__ == '__main__':
     f_total = np.zeros((ntotal,(N+1)**2), dtype=np.float32)
     interface = generate_interface(N)
     for k in range(ntotal):
-        B, C, up, index, val = tfpm2d(N, f[k], interface)
+        B, C, up, index, val, index_b, index_j, index_c = tfpm2d(N, f[k], interface)
         B_total[k] = B
         C_total[k] = C
         up_total[k] = up
@@ -283,4 +290,4 @@ if __name__ == '__main__':
         f_fine = interpolate_f_2d(points).reshape(N*M+1, N*M+1)
         _, _, ut, _, _ = test_tfpm_refine.tfpm2d(N*M, f_fine, interface)
         ut_fine[k] = ut[:]
-    np.savez(r"DeepONet-type\2d-L-shaped\saved_data\data.npz", f_total=f_total, B_total=B_total, C_total=C_total, up_total=up_total, index=index, val=val, u_test_fine=ut_fine)
+    np.savez(r"DeepONet-type\2d-L-shaped\saved_data\data.npz", f_total=f_total, B_total=B_total, C_total=C_total, up_total=up_total, index=index, val=val, u_test_fine=ut_fine, index_continuous=index_c, index_jump=index_j, index_boundary=index_b)
