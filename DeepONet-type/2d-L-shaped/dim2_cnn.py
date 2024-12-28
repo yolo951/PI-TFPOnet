@@ -114,8 +114,4 @@ class encoder_decoder(nn.Module):
 
 # with torch.no_grad():
 #     test_output = model(x)
-<<<<<<< HEAD
 #     print(f'Test Output Shape: {test_output.shape}')
-=======
-#     print(f'Test Output Shape: {test_output.shape}')
->>>>>>> 73e2dfa4c98eb6ec7814ba5ffee2970e15b6d1e8
