@@ -51,20 +51,24 @@ class GRF(object):
         return res
 
 def c(x,y):
-    if x < 1/2:
-        a = 16
-    else:
+    if (0.25<=y<=0.5 and 0.25<=x<=0.75) or (0.5<=y<=0.75 and 0.25<=x<=0.5):
         a = 1
+    else:
+        a = 16
     return a*1000.0
 
 def b(x,y):
-    if x >= 1/2:
-        a = 2*(1-x)
+    if y==1:
+        a = 1-x
+    elif y==0:
+        a = x
+    elif x==1:
+        a = 1-y
     else:
-        a = 0
-    return a
+        a = y
+    return a*0.5
     
-def tfpm2d(N, f, interface): 
+def tfpm2d(N, f, interface, alpha=1.0, beta=0.0, eps=1.0): 
     h = 1/(2*N)
     index = np.zeros((4*N**2, 8))
     val = np.zeros((4*N**2, 8))
@@ -197,36 +201,41 @@ def tfpm2d(N, f, interface):
             up[j,i] = f0/c0 + c1 + c2 + c3 + c4
     return B, C, up, index, val
 
-if __name__ == '__main__':
-    N = 32
-    ntrain = 1
-    ntest = 0
-    ntotal = ntrain + ntest
-    alpha = 1.0 # interface jump
-    beta = 0
-    eps = 1.0  # We multiply both sides of the equation by 1/eps, so eps here can be 1.0
-    f = generate(samples = ntotal, out_dim=N+1, length_scale=1)
-    f *= 1000.0
-    np.save(r'DeepONet-type\2d-L-shaped\saved_data\f.npy', f)
-
-    # k = 0 
-    # x = np.linspace(0, 1, N+1)
-    # xx,yy = np.meshgrid(x,x)
-    # fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    # ax.plot_surface(xx, yy, f[k], cmap='rainbow')
-    # ax.title.set_text('generated f(x,y)')
-    # plt.show()
-
-    B_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
-    C_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
-    up_total = np.zeros((ntotal,N,N), dtype=np.float32)
-    f_total = np.zeros((ntotal,(N+1)**2), dtype=np.float32)
+def generate_interface(N):
     vertical_left = set([(N//4-1, j) for j in range(N//4, N*3//4)])
     vertical_right = set([(N//2-1, j) for j in range(N//2, N*3//4)])|set([(N*3//4-1, j) for j in range(N//4, N//2)])
     horizontal_buttom = set([(i, N//4-1) for i in range(N//4, N*3//4)])
     horizontal_top = set([(i, N//2-1) for i in range(N//2, N*3//4)])|set([(i, N*3//4-1) for i in range(N//4, N//2)])
     interface = {'vertical_left': vertical_left, 'vertical_right': vertical_right, 
                  'horizontal_buttom': horizontal_buttom, 'horizontal_top': horizontal_top}
+    return interface
+
+if __name__ == '__main__':
+    N = 32
+    ntrain = 1000
+    ntest = 200
+    ntotal = ntrain + ntest
+    alpha = 1.0 # interface jump
+    beta = 0
+    eps = 1.0  # We multiply both sides of the equation by 1/eps, so eps here can be 1.0
+    # f = generate(samples = ntotal, out_dim=N+1, length_scale=1)
+    # f *= 1000.0
+    # np.save(r'DeepONet-type\2d-L-shaped\saved_data\f.npy', f)
+    f = np.load(r'DeepONet-type\2d-L-shaped\saved_data\f.npy')
+
+    k = 0 
+    x = np.linspace(0, 1, N+1)
+    xx,yy = np.meshgrid(x,x)
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    ax.plot_surface(xx, yy, f[k], cmap='rainbow')
+    ax.title.set_text('generated f(x,y)')
+    plt.show()
+
+    B_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
+    C_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
+    up_total = np.zeros((ntotal,N,N), dtype=np.float32)
+    f_total = np.zeros((ntotal,(N+1)**2), dtype=np.float32)
+    interface = generate_interface(N)
     for k in range(ntotal):
         B, C, up, index, val = tfpm2d(N, f[k], interface)
         B_total[k] = B
@@ -234,43 +243,44 @@ if __name__ == '__main__':
         up_total[k] = up
         f_total[k] = f[k].reshape(-1)
 
-    # index of L-shaped
-    idx_y = [[N//4+i]*(N//2) for i in range(0, N//4)] + [[N//2+i]*(N//4) for i in range(0, N//4)]
-    idx_y_remain = [[i]*N for i in range(0, N//4)] + [[N//4+i]*(N//2) for i in range(0, N//4)]\
-                    + [[N//2+i]*(N*3//4) for i in range(0, N//4)] + [[N*3//4+i]*N for i in range(0, N//4)]
-    idx_y = np.concatenate(idx_y)
-    idx_y_remain = np.concatenate(idx_y_remain)
-    idx_x = [N//4+j for j in range(N // 2)]*(N//4) + [N//4+j for j in range(N//4)]*(N//4)
-    idx_x_remain = np.hstack((np.array([j for j in range(N)]*(N//4)),
-                            np.concatenate([[j for j in range(N//4)]+[j for j in range(N*3//4, N)]]*(N//4)), 
-                            np.concatenate([[j for j in range(N//4)]+[j for j in range(N//2, N)]]*(N//4)),
-                            np.array([j for j in range(N)]*(N//4))))
-    idx_x = np.array(idx_x)
+    # index of L-shaped(centor of cell)
+    # idx_y = [[N//4+i]*(N//2) for i in range(0, N//4)] + [[N//2+i]*(N//4) for i in range(0, N//4)]
+    # idx_y_remain = [[i]*N for i in range(0, N//4)] + [[N//4+i]*(N//2) for i in range(0, N//4)]\
+    #                 + [[N//2+i]*(N*3//4) for i in range(0, N//4)] + [[N*3//4+i]*N for i in range(0, N//4)]
+    # idx_y = np.concatenate(idx_y)
+    # idx_y_remain = np.concatenate(idx_y_remain)
+    # idx_x = [N//4+j for j in range(N // 2)]*(N//4) + [N//4+j for j in range(N//4)]*(N//4)
+    # idx_x_remain = np.hstack((np.array([j for j in range(N)]*(N//4)),
+    #                         np.concatenate([[j for j in range(N//4)]+[j for j in range(N*3//4, N)]]*(N//4)), 
+    #                         np.concatenate([[j for j in range(N//4)]+[j for j in range(N//2, N)]]*(N//4)),
+    #                         np.array([j for j in range(N)]*(N//4))))
+    # idx_x = np.array(idx_x)
 
-    x = np.linspace(1/2/N, 1-1/2/N, N)
-    xx, yy = np.meshgrid(x, x)
-    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    # plot inner L-shaped area
-    Z_full = np.full_like(xx, np.nan, dtype=float)
-    Z_full[idx_y, idx_x] = up_total[0, idx_y, idx_x]
-    ax.plot_surface(xx, yy, Z_full, cmap='rainbow')
-    # plot remaining area
-    Z_full = np.full_like(xx, np.nan, dtype=float)
-    Z_full[idx_y_remain, idx_x_remain] = up_total[0, idx_y_remain, idx_x_remain]
-    ax.plot_surface(xx, yy, Z_full, cmap='rainbow')
-    ax.title.set_text('generated f(x,y)')
-    plt.show()
+    # x = np.linspace(1/2/N, 1-1/2/N, N)
+    # xx, yy = np.meshgrid(x, x)
+    # fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    # # plot inner L-shaped area
+    # Z_full = np.full_like(xx, np.nan, dtype=float)
+    # Z_full[idx_y, idx_x] = up_total[0, idx_y, idx_x]
+    # ax.plot_surface(xx, yy, Z_full, cmap='rainbow')
+    # # plot remaining area
+    # Z_full = np.full_like(xx, np.nan, dtype=float)
+    # Z_full[idx_y_remain, idx_x_remain] = up_total[0, idx_y_remain, idx_x_remain]
+    # ax.plot_surface(xx, yy, Z_full, cmap='rainbow')
+    # ax.title.set_text('generated f(x,y)')
+    # plt.show()
 
     M = 4 # M-times test-resolution
     ut_fine = np.zeros((ntest, M*N+1,M*N+1))
     grid_fine = np.linspace(0,1,N*M+1)
     X, Y = np.meshgrid(grid_fine, grid_fine)
     points = np.stack((Y.flatten(), X.flatten()), axis=-1)
-    # import test_tfpm_refine
+    interface = generate_interface(N*M)
+    import test_tfpm_refine
 
-    # for k in range(ntest):
-    #     interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N+1),np.linspace(0, 1, N+1)), f[ntrain+k])
-    #     f_fine = interpolate_f_2d(points).reshape(N*M+1, N*M+1)
-    #     _, _, ut, _, _ = test_tfpm_refine.tfpm2d(N*M, f_fine)
-    #     ut_fine[k] = ut[:]
+    for k in range(ntest):
+        interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N+1),np.linspace(0, 1, N+1)), f[ntrain+k])
+        f_fine = interpolate_f_2d(points).reshape(N*M+1, N*M+1)
+        _, _, ut, _, _ = test_tfpm_refine.tfpm2d(N*M, f_fine, interface)
+        ut_fine[k] = ut[:]
     np.savez(r"DeepONet-type\2d-L-shaped\saved_data\data.npz", f_total=f_total, B_total=B_total, C_total=C_total, up_total=up_total, index=index, val=val, u_test_fine=ut_fine)
