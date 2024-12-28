@@ -59,9 +59,9 @@ def c(x,y):
 
 def b(x,y):
     if x >= 1/2:
-        a = 2*(1-x)
+        a = 1-x
     else:
-        a = 0
+        a = -x
     return a
     
 def tfpm2d(N,f): 
@@ -188,8 +188,9 @@ if __name__ == '__main__':
     alpha = 1 # interface jump
     beta = 0
     eps = 1.0
-    f = generate(samples = ntotal, out_dim=N+1, length_scale=1)
-    np.save(r'DeepONet-type\2d-smooth\saved_data\f.npy', f)
+    # f = generate(samples = ntotal, out_dim=N+1, length_scale=1)
+    # np.save(r'DeepONet-type\2d-smooth\saved_data\f.npy', f)
+    f = np.load('DeepONet-type/2d-smooth/saved_data/f.npy')
 
     k = 0 
     x = np.linspace(0, 1, N+1)
@@ -222,4 +223,4 @@ if __name__ == '__main__':
         f_fine = interpolate_f_2d(points).reshape(N*M+1, N*M+1)
         _, _, ut, _, _ = tfpm_refine.tfpm2d(N*M, f_fine)
         ut_fine[k] = ut[:]
-    np.savez(r"DeepONet-type\2d-smooth\saved_data\data.npz", f_total=f_total, B_total=B_total, C_total=C_total, up_total=up_total, index=index, val=val, u_test_fine=ut_fine)
+    np.savez("DeepONet-type/2d-smooth/saved_data/data.npz", f_total=f_total, B_total=B_total, C_total=C_total, up_total=up_total, index=index, val=val, u_test_fine=ut_fine)

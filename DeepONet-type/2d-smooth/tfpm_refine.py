@@ -59,9 +59,9 @@ def c(x,y):
 
 def b(x,y):
     if x >= 1/2:
-        a = 2*(1-x)
+        a = 1-x
     else:
-        a = 0
+        a = -x
     return a
     
 def tfpm2d(N, f, eps=1.0, alpha=1.0, beta=0.0): 

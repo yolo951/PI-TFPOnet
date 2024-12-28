@@ -55,7 +55,7 @@ def c(x,y):
     return a 
 
 def b(x,y):
-    return torch.where(x>=1/2, 2*(1-x), 0.0)
+    return torch.where(x>=1/2, 1-x, -x)
 
 N = 32
 M = 4  # M-times test-resolution
@@ -68,7 +68,7 @@ beta = 0
 eps = 1.0
 
 
-type_ = 'supervised' # supervised
+type_ = 'unsupervised' # supervised
 epochs = 20000
 learning_rate = 0.001
 batch_size = 200
