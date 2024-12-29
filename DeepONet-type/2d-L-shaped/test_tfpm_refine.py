@@ -302,9 +302,9 @@ if __name__ == '__main__':
     Z_error_inner = np.full_like(xxh, np.nan, dtype=float)
     Z_error_outer = np.full_like(xxh, np.nan, dtype=float)
     Z_refine_inner[idx_x, idx_y] = up_refine[idx_x, idx_y]
-    Z_refine_inner[idx_x_remain, idx_y_remain] = up_refine[idx_x_remain, idx_y_remain]
+    Z_refine_outer[idx_x_remain, idx_y_remain] = up_refine[idx_x_remain, idx_y_remain]
     Z_fine_inner[idx_x, idx_y] = up_fine[idx_x, idx_y]
-    Z_fine_inner[idx_x_remain, idx_y_remain] = up_fine[idx_x_remain, idx_y_remain]
+    Z_fine_outer[idx_x_remain, idx_y_remain] = up_fine[idx_x_remain, idx_y_remain]
     error = np.abs(up_fine-up_refine)
     Z_error_inner[idx_x, idx_y] = error[idx_x, idx_y]
     Z_error_outer[idx_x_remain, idx_y_remain] = error[idx_x_remain, idx_y_remain]
