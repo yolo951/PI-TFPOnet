@@ -212,8 +212,6 @@ for ep in range(epochs):
         pred = torch.concat((out0, out1), dim=-1)
         rel_l2 = torch.linalg.norm(pred.flatten() - up_test.flatten()).item() / torch.linalg.norm(up_test.flatten()).item()
         rel_l2_history.append(rel_l2)
-        if type_=='unsupervised':
-            print(10*(mse_f0.item() + mse_f0.item()),10*(mse_b0.item()+mse_b1.item()), mse_i.item())
         print('epoch {:d}/{:d} , MSE = {:.6f}, rel_l2 = {:.6f}, using {:.6f}s\n'.format(ep + 1, epochs, train_mse, rel_l2, t2 - t1), end='', flush=True)
 np.save('DeepONet-type/2d-L-shaped/saved_data/{}_ionet_loss_history.npy'.format(type_), mse_history)
 np.save('DeepONet-type/2d-L-shaped/saved_data/{}_ionet_rel_l2_history.npy'.format(type_), rel_l2_history)
