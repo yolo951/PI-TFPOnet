@@ -27,6 +27,7 @@ def plot_domain_with_L_hole_no_line():
     plt.savefig('DeepONet-type/2d-L-shaped/saved_data/2d_Lshaped.png')
     plt.show()
 
+# plot the domain with L-shaped hole
 plot_domain_with_L_hole_no_line()
 
 tfponet_loss = np.load(r'DeepONet-type\2d-L-shaped\saved_data\rel_l2_history.npy')
