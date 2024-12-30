@@ -5,7 +5,6 @@ from sklearn import gaussian_process as gp
 import matplotlib.pyplot as plt
 import torch
 from collections import OrderedDict
-from scipy import interpolate
 from scipy import sparse
 from scipy.sparse import linalg
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -192,13 +191,13 @@ if __name__ == '__main__':
     # np.save(r'DeepONet-type\2d-smooth\saved_data\f.npy', f)
     f = np.load('DeepONet-type/2d-smooth/saved_data/f.npy')
 
-    k = 0 
-    x = np.linspace(0, 1, N+1)
-    xx,yy = np.meshgrid(x,x)
-    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    ax.plot_surface(xx, yy, f[k], cmap='rainbow')
-    ax.title.set_text('generated f(x,y)')
-    plt.show()
+    # k = 0 
+    # x = np.linspace(0, 1, N+1)
+    # xx,yy = np.meshgrid(x,x)
+    # fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    # ax.plot_surface(xx, yy, f[k], cmap='rainbow')
+    # ax.title.set_text('generated f(x,y)')
+    # plt.show()
 
     B_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
     C_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
@@ -210,19 +209,26 @@ if __name__ == '__main__':
         C_total[k] = C
         up_total[k] = up
         f_total[k] = f[k].reshape(-1)
+        print(k)
 
     M = 4 # M-times test-resolution
-    ut_fine = np.zeros((ntotal, M*N+1,M*N+1))
+    ut_train_vertex = np.zeros((ntrain, N+1, N+1))
+    ut_test_fine = np.zeros((ntest, M*N+1,M*N+1))
     grid_fine = np.linspace(0,1,N*M+1)
     X, Y = np.meshgrid(grid_fine, grid_fine)
     points = np.stack((Y.flatten(), X.flatten()), axis=-1)
-    f_fine = np.zeros((ntotal, M*N+1, M*N+1))
+    f_test_fine = np.zeros((ntest, M*N+1, M*N+1))
     import tfpm_refine
 
     for k in range(ntotal):
         interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N+1),np.linspace(0, 1, N+1)), f[k])
         f_fine_each = interpolate_f_2d(points).reshape(N*M+1, N*M+1)
         _, _, ut, _, _ = tfpm_refine.tfpm2d(N*M, f_fine_each)
-        ut_fine[k] = ut[:]
-        f_fine[k] = f_fine_each[:]
-    np.savez("DeepONet-type/2d-smooth/saved_data/data.npz", f_total=f_total, B_total=B_total, C_total=C_total, up_total=up_total, index=index, val=val, u_test_fine=ut_fine[-ntest:], u_train_fine=ut_fine[:ntrain], f_fine=f_fine)
+        if k<ntrain:
+            ut_train_vertex[k] = ut[::M, ::M]
+        else:
+            ut_test_fine[k-ntrain] = ut[:]
+            f_test_fine[k-ntrain] = f_fine_each[:]
+        print(k)
+    np.savez("DeepONet-type/2d-smooth/saved_data/data.npz", f_total=f_total, B_total=B_total, C_total=C_total, up_total=up_total, index=index, val=val, u_test_fine=ut_test_fine)
+    np.savez("DeepONet-type/2d-smooth/saved_data/data_fno.npz", u_test_fine=ut_test_fine, u_train_sparse=ut_train_vertex, f_test_fine=f_test_fine)
