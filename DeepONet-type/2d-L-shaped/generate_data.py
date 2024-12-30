@@ -5,7 +5,6 @@ from sklearn import gaussian_process as gp
 import matplotlib.pyplot as plt
 import torch
 from collections import OrderedDict
-from scipy import interpolate
 from scipy import sparse
 from scipy.sparse import linalg
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -278,16 +277,23 @@ if __name__ == '__main__':
     # plt.show()
 
     M = 4 # M-times test-resolution
-    ut_fine = np.zeros((ntest, M*N+1,M*N+1))
+    ut_train_vertex = np.zeros((ntrain, N+1, N+1))
+    ut_test_fine = np.zeros((ntest, M*N+1, M*N+1))
     grid_fine = np.linspace(0,1,N*M+1)
     X, Y = np.meshgrid(grid_fine, grid_fine)
     points = np.stack((Y.flatten(), X.flatten()), axis=-1)
+    f_test_fine = np.zeros((ntest, M*N+1, M*N+1))
     interface = generate_interface(N*M)
     import test_tfpm_refine
 
-    for k in range(ntest):
-        interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N+1),np.linspace(0, 1, N+1)), f[ntrain+k])
-        f_fine = interpolate_f_2d(points).reshape(N*M+1, N*M+1)
-        _, _, ut, _, _ = test_tfpm_refine.tfpm2d(N*M, f_fine, interface)
-        ut_fine[k] = ut[:]
-    np.savez(r"DeepONet-type\2d-L-shaped\saved_data\data.npz", f_total=f_total, B_total=B_total, C_total=C_total, up_total=up_total, index=index, val=val, u_test_fine=ut_fine, index_continuous=index_c, index_jump=index_j, index_boundary=index_b)
+    for k in range(ntotal):
+        interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N+1),np.linspace(0, 1, N+1)), f[k])
+        f_fine_each = interpolate_f_2d(points).reshape(N*M+1, N*M+1)
+        _, _, ut, _, _ = test_tfpm_refine.tfpm2d(N*M, f_fine_each, interface)
+        if k<ntrain:
+            ut_train_vertex[k] = ut[::M, ::M]
+        else:
+            ut_test_fine[k-ntrain] = ut[:]
+            f_test_fine[k-ntrain] = f_fine_each[:]
+    np.savez(r"DeepONet-type\2d-L-shaped\saved_data\data.npz", f_total=f_total, B_total=B_total, C_total=C_total, up_total=up_total, index=index, val=val, u_test_fine=ut_test_fine, index_continuous=index_c, index_jump=index_j, index_boundary=index_b)
+    np.savez(r"DeepONet-type\2d-L-shaped\saved_data\data_fno.npz", u_test_fine=ut_test_fine, u_train_sparse=ut_train_vertex, f_test_fine=f_test_fine)
