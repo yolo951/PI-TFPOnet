@@ -192,24 +192,24 @@ if __name__ == '__main__':
     # np.save(r'DeepONet-type\2d-smooth\saved_data\f.npy', f)
     f = np.load('DeepONet-type/2d-smooth/saved_data/f.npy')
 
-    # k = 0 
-    # x = np.linspace(0, 1, N+1)
-    # xx,yy = np.meshgrid(x,x)
-    # fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    # ax.plot_surface(xx, yy, f[k], cmap='rainbow')
-    # ax.title.set_text('generated f(x,y)')
-    # plt.show()
+    k = 0 
+    x = np.linspace(0, 1, N+1)
+    xx,yy = np.meshgrid(x,x)
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    ax.plot_surface(xx, yy, f[k], cmap='rainbow')
+    ax.title.set_text('generated f(x,y)')
+    plt.show()
 
-    # B_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
-    # C_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
-    # up_total = np.zeros((ntotal,N,N), dtype=np.float32)
-    # f_total = np.zeros((ntotal,(N+1)**2), dtype=np.float32)
-    # for k in range(ntotal):
-    #     B, C, up, index, val = tfpm2d(N,f[k])
-    #     B_total[k] = B
-    #     C_total[k] = C
-    #     up_total[k] = up
-    #     f_total[k] = f[k].reshape(-1)
+    B_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
+    C_total = np.zeros((ntotal,4*N**2), dtype=np.float32)
+    up_total = np.zeros((ntotal,N,N), dtype=np.float32)
+    f_total = np.zeros((ntotal,(N+1)**2), dtype=np.float32)
+    for k in range(ntotal):
+        B, C, up, index, val = tfpm2d(N,f[k])
+        B_total[k] = B
+        C_total[k] = C
+        up_total[k] = up
+        f_total[k] = f[k].reshape(-1)
 
     M = 4 # M-times test-resolution
     ut_fine = np.zeros((ntotal, M*N+1,M*N+1))
@@ -225,12 +225,4 @@ if __name__ == '__main__':
         _, _, ut, _, _ = tfpm_refine.tfpm2d(N*M, f_fine_each)
         ut_fine[k] = ut[:]
         f_fine[k] = f_fine_each[:]
-        print(k)
-    data = np.load("DeepONet-type/2d-smooth/saved_data/data.npz")
-    f_total = data['f_total']
-    B_total = data['B_total']
-    C_total = data['C_total']
-    up_total = data['up_total']
-    index = data['index']
-    val = data['val']
     np.savez("DeepONet-type/2d-smooth/saved_data/data.npz", f_total=f_total, B_total=B_total, C_total=C_total, up_total=up_total, index=index, val=val, u_test_fine=ut_fine[-ntest:], u_train_fine=ut_fine[:ntrain], f_fine=f_fine)
