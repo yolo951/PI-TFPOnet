@@ -256,9 +256,9 @@ Z_fine_outer = np.full_like(xxh, np.nan, dtype=float)
 Z_error_inner = np.full_like(xxh, np.nan, dtype=float)
 Z_error_outer = np.full_like(xxh, np.nan, dtype=float)
 Z_refine_inner[idx_x, idx_y] = up_refine[k, idx_x, idx_y]
-Z_refine_inner[idx_x_remain, idx_y_remain] = up_refine[k, idx_x_remain, idx_y_remain]
+Z_refine_outer[idx_x_remain, idx_y_remain] = up_refine[k, idx_x_remain, idx_y_remain]
 Z_fine_inner[idx_x, idx_y] = ut_fine[k, idx_x, idx_y]
-Z_fine_inner[idx_x_remain, idx_y_remain] = ut_fine[k, idx_x_remain, idx_y_remain]
+Z_fine_outer[idx_x_remain, idx_y_remain] = ut_fine[k, idx_x_remain, idx_y_remain]
 error = np.abs(ut_fine-up_refine)
 Z_error_inner[idx_x, idx_y] = error[k, idx_x, idx_y]
 Z_error_outer[idx_x_remain, idx_y_remain] = error[k, idx_x_remain, idx_y_remain]
