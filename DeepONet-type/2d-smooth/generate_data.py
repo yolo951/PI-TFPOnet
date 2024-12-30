@@ -212,15 +212,17 @@ if __name__ == '__main__':
         f_total[k] = f[k].reshape(-1)
 
     M = 4 # M-times test-resolution
-    ut_fine = np.zeros((ntest, M*N+1,M*N+1))
+    ut_fine = np.zeros((ntotal, M*N+1,M*N+1))
     grid_fine = np.linspace(0,1,N*M+1)
     X, Y = np.meshgrid(grid_fine, grid_fine)
     points = np.stack((Y.flatten(), X.flatten()), axis=-1)
+    f_fine = np.zeros((ntotal, M*N+1, M*N+1))
     import tfpm_refine
 
-    for k in range(ntest):
-        interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N+1),np.linspace(0, 1, N+1)), f[ntrain+k])
-        f_fine = interpolate_f_2d(points).reshape(N*M+1, N*M+1)
-        _, _, ut, _, _ = tfpm_refine.tfpm2d(N*M, f_fine)
+    for k in range(ntotal):
+        interpolate_f_2d = interpolate.RegularGridInterpolator((np.linspace(0, 1, N+1),np.linspace(0, 1, N+1)), f[k])
+        f_fine_each = interpolate_f_2d(points).reshape(N*M+1, N*M+1)
+        _, _, ut, _, _ = tfpm_refine.tfpm2d(N*M, f_fine_each)
         ut_fine[k] = ut[:]
-    np.savez("DeepONet-type/2d-smooth/saved_data/data.npz", f_total=f_total, B_total=B_total, C_total=C_total, up_total=up_total, index=index, val=val, u_test_fine=ut_fine)
+        f_fine[k] = f_fine_each[:]
+    np.savez("DeepONet-type/2d-smooth/saved_data/data.npz", f_total=f_total, B_total=B_total, C_total=C_total, up_total=up_total, index=index, val=val, u_test_fine=ut_fine[-ntest:], u_train_fine=ut_fine[:ntrain], f_fine=f_fine)
