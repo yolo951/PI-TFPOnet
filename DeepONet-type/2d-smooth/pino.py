@@ -1,6 +1,6 @@
 
 import sys
-sys.path.append('D:/pythonProject/TFP-Net/DeepONet-type')
+sys.path.append('DeepONet-type')
 import matplotlib.pyplot as plt
 from FNO2d import FNO2d
 import torch
@@ -13,7 +13,6 @@ from timeit import default_timer
 
 @torch.jit.script
 def matmul(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    # (batch, in_channel, x,y,t ), (in_channel, out_channel, x,y,t) -> (batch, out_channel, x,y,t)
     res =  torch.einsum("bxy,xy->bxy", a, b)
     return res
 
@@ -51,12 +50,12 @@ def PINO_loss(u_left, fx_left, u_right, fx_right, myloss, coeffs):
     grads = FDM(u_left, u_right, eps=1.)
     idx_left = torch.LongTensor([[0, i] for i in range(N//2+1)]
                                              +[[i, 0] for i in range(1, N)]
-                                             +[[N, i] for i in range(1, N//2+1)]).to(device)
+                                             +[[N, i] for i in range(N//2+1)]).to(device)
     idx_right = torch.LongTensor([[0, i] for i in range(N//2+1)]
                                  +[[i, -1] for i in range(1, N)]
-                                 +[[N, i] for i in range(N//2)]).to(device)
-    ub_left = 1-yy[:, :N//2+1].unsqueeze(0).repeat(batch_size, 1, 1)
-    ub_right = -yy[:, N//2:].unsqueeze(0).repeat(batch_size, 1, 1)
+                                 +[[N, i] for i in range(N//2+1)]).to(device)
+    ub_left = -xx[:, :N//2+1].unsqueeze(0).repeat(batch_size, 1, 1)
+    ub_right = 1-xx[:, N//2:].unsqueeze(0).repeat(batch_size, 1, 1)
     Du_left, Du_right, ux_left, ux_right = grads['Du_left'], grads['Du_right'], grads['ux_left'], grads['ux_right']
     coeff_equ, coeff_i, coeff_i_grad, coeff_b = coeffs['coeff_equ'], coeffs['coeff_i'], coeffs['coeff_i_grad'], coeffs['coeff_b']
 
@@ -73,15 +72,14 @@ def PINO_loss(u_left, fx_left, u_right, fx_right, myloss, coeffs):
 
 if __name__ == '__main__':
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    modes1 = [20, 20, 20, 20]
+    modes1 = [16, 16, 16, 16]
     modes2 = [9, 9, 9, 9]
     width = 64
     epochs = 10000
     learning_rate = 0.001
-    step_size = 2000
     gamma = 0.5
     batch_size = 64
-    coeffs = {'coeff_equ': 10.0, 'coeff_i': 10.0, 'coeff_i_grad': 10.0, 'coeff_b': 10.0}
+    coeffs = {'coeff_equ': 10.0, 'coeff_i': 10.0, 'coeff_i_grad': 10.0, 'coeff_b': 1.0}
     data = np.load("DeepONet-type/2d-smooth/saved_data/data.npz")
     data_fno = np.load("DeepONet-type/2d-smooth/saved_data/data_fno.npz")
 
@@ -116,8 +114,8 @@ if __name__ == '__main__':
     optimizer_left = Adam(model_left.parameters(), betas=(0.9, 0.999), lr=learning_rate)
     optimizer_right = Adam(model_right.parameters(), betas=(0.9, 0.999), lr=learning_rate)
     myloss = torch.nn.MSELoss(reduction='mean')
-    scheduler_left = torch.optim.lr_scheduler.MultiStepLR(optimizer_left, milestones=[2000, 5000, 7000, 10000], gamma=gamma)
-    scheduler_right = torch.optim.lr_scheduler.MultiStepLR(optimizer_right, milestones=[2000, 5000, 7000, 10000], gamma=gamma)
+    scheduler_left = torch.optim.lr_scheduler.MultiStepLR(optimizer_left, milestones=[1500, 3500, 7000, 10000], gamma=gamma)
+    scheduler_right = torch.optim.lr_scheduler.MultiStepLR(optimizer_right, milestones=[1500, 3500, 7000, 10000], gamma=gamma)
     mse_history = []
     rel_l2_history = []
     model_left.train()
@@ -173,4 +171,17 @@ if __name__ == '__main__':
     # plt.ylim(1e-3, 1e+2)
     plt.yscale("log")
     plt.savefig('DeepONet-type/2d-smooth/saved_data/unsupervised_fno_l2.png')
-    plt.show()
+    up_pred = np.array(up_pred.detach().cpu())
+    u_test_fine = np.array(u_test_fine.cpu())
+    grid_fine = np.linspace(0, 1, N*M+1)
+    xx,yy = np.meshgrid(grid_fine, grid_fine)
+
+    fig = plt.figure(figsize=(12, 6))
+    ax1 = fig.add_subplot(1, 2, 1, projection='3d')
+    ax1.plot_surface(xx, yy, up_pred[0], cmap='rainbow')
+    ax1.set_title('Predicted Solution u(x,y)')
+    ax2 = fig.add_subplot(1, 2, 2, projection='3d')
+    ax2.plot_surface(xx, yy, u_test_fine[0], cmap='rainbow')
+    ax2.set_title('Reference Solution u(x,y)')
+    plt.tight_layout()
+    plt.savefig('DeepONet-type/2d-smooth/test_pino.png')
