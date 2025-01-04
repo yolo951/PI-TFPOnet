@@ -1,13 +1,9 @@
 
-
 import numpy as np
-from scipy import interpolate
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
-from collections import OrderedDict
-from scipy import interpolate
 from timeit import default_timer
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
@@ -71,7 +67,7 @@ alpha = 1 #interface jump
 beta = 0
 eps = 1.000
 
-epochs = 20000
+epochs = 10000
 learning_rate = 0.0002
 batch_size = 250
 step_size = 5000
@@ -118,8 +114,21 @@ x_b = torch.cat((torch.tensor(list(zip(x, torch.zeros_like(x)))),
 y_b = b(x_b[:, 0], x_b[:, 1]).unsqueeze(0).unsqueeze(-1).repeat([batch_size,1,1]).to(device)
 x_b = x_b.unsqueeze(0).repeat([batch_size,1,1]).to(device)
 
-xr_i = torch.tensor(list(zip(0.51*torch.ones_like(x), x))).unsqueeze(0).repeat([batch_size,1,1]).to(device)
-xl_i = torch.tensor(list(zip(0.49*torch.ones_like(x), x))).unsqueeze(0).repeat([batch_size,1,1]).to(device)
+dx = 0.01
+x_inner = [[x0, 0.25+dx] for x0 in np.linspace(0.25+dx, 0.75-dx, 20, endpoint=True)]\
+        +[[0.75-dx, y0] for y0 in np.linspace(0.25+dx, 0.5-dx, 10, endpoint=True)]\
+        +[[x0, 0.5-dx] for x0 in np.linspace(0.5+dx, 0.75-dx, 10, endpoint=True)]\
+        +[[0.5-dx, y0] for y0 in np.linspace(0.5+dx, 0.75-dx, 10, endpoint=True)]\
+        +[[x0, 0.75-dx] for x0 in np.linspace(0.25+dx, 0.5-dx, 10, endpoint=True)]\
+        +[[0.25+dx, y0] for y0 in np.linspace(0.25+dx, 0.75-dx, 20, endpoint=True)]
+x_outer = [[x0, 0.25-dx] for x0 in np.linspace(0.25+dx, 0.75-dx, 20, endpoint=True)]\
+        +[[0.75+dx, y0] for y0 in np.linspace(0.25+dx, 0.5-dx, 10, endpoint=True)]\
+        +[[x0, 0.5+dx] for  x0 in np.linspace(0.5+dx, 0.75-dx, 10, endpoint=True)]\
+        +[[0.5+dx, y0] for y0 in np.linspace(0.5+dx, 0.75-dx, 10, endpoint=True)]\
+        +[[x0, 0.75+dx] for x0 in np.linspace(0.25+dx, 0.5-dx, 10, endpoint=True)]\
+        +[[0.25-dx, y0] for y0 in np.linspace(0.25+dx, 0.75-dx, 20, endpoint=True)]
+x_inner = torch.tensor(x_inner, dtype=torch.float32).unsqueeze(0).repeat([batch_size,1,1]).to(device)
+x_outer = torch.tensor(x_outer, dtype=torch.float32).unsqueeze(0).repeat([batch_size,1,1]).to(device)
 
 for ep in range(epochs):
     model.train()
@@ -147,11 +156,11 @@ for ep in range(epochs):
             y_bp = model(x,x_b)
             mse_b = mseloss(y_b,y_bp)
             
-            yr = model(x,xr_i)
-            yl = model(x,xl_i)
-            mse_i = mseloss(yr,yl+1)
+            y_inner = model(x, x_inner)
+            y_outer = model(x, x_outer)
+            mse_i = mseloss(y_inner, y_outer+1)
             
-            mse = mse_f + 50.0*mse_b + 50.0*mse_i
+            mse = mse_f + 50.0*mse_b + mse_i
         mse.backward()
         optimizer.step()
         train_mse += mse.item()
@@ -160,6 +169,7 @@ for ep in range(epochs):
     train_mse /= len(train_loader)
     mse_history.append(train_mse)
     if ep==0 or (ep + 1)%100 ==0:
+        print(mse_f.item(), 50*mse_b.item(), mse_i.item())
         up_pred = model(f_test, loc_test)
         rel_l2 = torch.linalg.norm(up_pred.flatten() - up_test.flatten()).item() / torch.linalg.norm(up_test.flatten()).item()
         rel_l2_history.append(rel_l2)
@@ -170,7 +180,6 @@ torch.save(model.state_dict(), 'DeepONet-type/2d-L-shaped/saved_data/{}_deeponet
 
 with torch.no_grad(): 
     up_pred = model(f_test, loc_fine)
-    print(torch.linalg.norm(ut_fine.flatten()).item())
     print('test error on high resolution: relative L2 norm = ', torch.linalg.norm(up_pred.flatten() - ut_fine.flatten()).item() / torch.linalg.norm(ut_fine.flatten()).item())
     print('test error on high resolution: relative L_infty norm = ', torch.linalg.norm(up_pred.flatten() -  ut_fine.flatten(), ord=torch.inf).item() / torch.linalg.norm(ut_fine.flatten(), ord=torch.inf).item())
 plt.figure()
@@ -181,3 +190,18 @@ plt.ylabel('relative l2 error')
 plt.yscale("log")
 plt.savefig('DeepONet-type/2d-L-shaped/saved_data/{}_deeponet_l2.png'.format(type_))
 plt.show()
+
+up_pred = np.array(up_pred.detach().cpu()).reshape((ntest, N*M+1, N*M+1))
+ut_fine = np.array(ut_fine.cpu())
+grid_fine = np.linspace(0, 1, N*M+1)
+xx,yy = np.meshgrid(grid_fine, grid_fine)
+
+fig = plt.figure(figsize=(12, 6))
+ax1 = fig.add_subplot(1, 2, 1, projection='3d')
+ax1.plot_surface(xx, yy, up_pred[0], cmap='rainbow')
+ax1.set_title('Predicted Solution u(x,y)')
+ax2 = fig.add_subplot(1, 2, 2, projection='3d')
+ax2.plot_surface(xx, yy, ut_fine[0], cmap='rainbow')
+ax2.set_title('Reference Solution u(x,y)')
+plt.tight_layout()
+plt.savefig('DeepONet-type/2d-L-shaped/test_pino.png')
