@@ -12,11 +12,6 @@ from Adam import Adam
 from timeit import default_timer
 torch.autograd.set_detect_anomaly(True)
 
-@torch.jit.script
-def matmul(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    res =  torch.einsum("bx,x->bx", a, b)
-    return res
-
 def generate_index(N):
     # idx except interface
     idx_y = torch.cat((
@@ -74,62 +69,90 @@ def generate_index(N):
 
 # Based on https://github.com/neuraloperator/physics_informed, we got the following code
 # In order to more conveniently obtain the conditions at the interface, we use two networks to predict the solutions in the two regions respectively.
-def FDM(u, line, eps=1., L=1):
-    N = u.size(1) - 1
-    dx = L / N
-    dy = dx
-    uxx = (u[:, 1:-1, 2:] - 2*u[:, 1:-1, 1:-1] + u[:, 1:-1, :-2]) / (dx * dx)
-    uyy = (u[:, 2:, 1:-1] - 2*u[:, 1:-1, 1:-1] + u[:, :-2, 1:-1]) / (dy * dy)
-    Du = - eps*(uxx + uyy)
 
-    idx_inner, idx_interface, idx_outer = line['idx_inner'], line['idx_interface'], line['idx_outer']
-    du_inner = (u[:, idx_interface[:, 1], idx_interface[:, 0]]-u[:, idx_inner[:, 1], idx_inner[:, 0]])/dx
-    du_outer = (u[:, idx_outer[:, 1], idx_outer[:, 0]]-u[:, idx_interface[:, 1], idx_interface[:, 0]])/dx
-    grads = {'Du': Du, 'du_inner': du_inner, 'du_outer': du_outer}
-    return grads
+class PINOLoss:
+    def __init__(self, eps, batch_size, N, mask, line, closure, coeffs, device):
+        self.eps = eps
+        self.mask = mask
+        self.line = line
+        self.closure = closure
+        self.coeffs = coeffs
+        self.u_full_inner = torch.zeros((batch_size, N+1, N+1), dtype=torch.float32, device=device)
+        self.u_full_outer = torch.zeros((batch_size, N+1, N+1), dtype=torch.float32, device=device)
+        self.temp = torch.zeros((batch_size, N+1, N+1), dtype=torch.float32, device=device)
+        x = torch.linspace(0, 1, N+1, dtype=torch.float32)
+        xx, yy = torch.meshgrid((x, x), indexing="xy")
+        c = torch.where(((0.25 <= yy) & (yy <= 0.5) & (0.25 <= xx) & (xx <= 0.75)) |
+                                    ((0.5 <= yy) & (yy <= 0.75) & (0.25 <= xx) & (xx <= 0.5)), 1.0, 16.0).to(device)
+        self.c_inner = c[mask['idx_inner'][:, 1], mask['idx_inner'][:, 0]]
+        self.c_outer = c[mask['idx_outer'][:, 1], mask['idx_outer'][:, 0]]
+        ub = 0.5*torch.where(yy == 1, 1 - xx, torch.where(yy == 0, xx, torch.where(xx == 1, 1 - yy, yy))).unsqueeze(0).repeat(batch_size, 1, 1).to(device)
+        self.ub = ub[:, line['idx_boundary'][:, 1], line['idx_boundary'][:, 0]]
+        self.myloss = torch.nn.MSELoss(reduction='mean')
+        
+    @staticmethod
+    def matmul(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        res =  torch.einsum("bx,x->bx", a, b)
+        return res
     
-def PINO_loss(u_inner, u_outer, f, mask, line, closure, myloss, coeffs):
-    idx_mask_inner, idx_mask_outer = mask['idx_inner'], mask['idx_outer']
-    idx_closure_inner, idx_closure_outer = closure['idx_inner'], closure['idx_outer']
-    idx_interface, idx_boundary = line['idx_interface'], line['idx_boundary']
-    batch_size = f.shape[0]
-    N = f.shape[1]-1
-    u_full_inner = torch.zeros((batch_size, N+1, N+1), dtype=torch.float32).to(f.device)
-    u_full_outer = torch.zeros((batch_size, N+1, N+1), dtype=torch.float32).to(f.device)
-    u_full_inner[:, idx_closure_inner[:, 1], idx_closure_inner[:, 0]] = u_inner.squeeze(-1)
-    u_full_outer[:, idx_closure_outer[:, 1], idx_closure_outer[:, 0]] = u_outer.squeeze(-1)
+    def FDM(self, u, L=1):
+        N = u.size(1) - 1
+        dx = L / N
+        dy = dx
+        uxx = (u[:, 1:-1, 2:] - 2*u[:, 1:-1, 1:-1] + u[:, 1:-1, :-2]) / (dx * dx)
+        uyy = (u[:, 2:, 1:-1] - 2*u[:, 1:-1, 1:-1] + u[:, :-2, 1:-1]) / (dy * dy)
+        Du = - self.eps*(uxx + uyy)
 
-    x = torch.linspace(0, 1, N+1).to(device)
-    xx, yy = torch.meshgrid(x, x, indexing="xy")
-    c = torch.where(((0.25 <= yy) & (yy <= 0.5) & (0.25 <= xx) & (xx <= 0.75)) |
-                                ((0.5 <= yy) & (yy <= 0.75) & (0.25 <= xx) & (xx <= 0.5)), 1.0, 16.0)
-    ub = 0.5*torch.where(yy == 1, 1 - xx, torch.where(yy == 0, xx, torch.where(xx == 1, 1 - yy, yy))).unsqueeze(0).repeat(batch_size, 1, 1)
+        idx_inner, idx_interface, idx_outer = self.line['idx_inner'], self.line['idx_interface'], self.line['idx_outer']
+        du_inner = (u[:, idx_interface[:, 1], idx_interface[:, 0]]-u[:, idx_inner[:, 1], idx_inner[:, 0]])/dx
+        du_outer = (u[:, idx_outer[:, 1], idx_outer[:, 0]]-u[:, idx_interface[:, 1], idx_interface[:, 0]])/dx
+        grads = {'Du': Du, 'du_inner': du_inner, 'du_outer': du_outer}
+        return grads
 
-    grads = FDM(u_full_inner, line, eps=0.001)
-    Du, du_inner = grads['Du'], grads['du_inner']
-    temp = torch.zeros_like(f, dtype=f.dtype, device=f.device)
-    temp[:, 1:-1, 1:-1] = Du.unsqueeze(-1)
-    Du_inner = temp[:, idx_mask_inner[:, 1], idx_mask_inner[:, 0]]
-    grads = FDM(u_full_outer, line, eps=0.001)
-    Du, du_outer = grads['Du'], grads['du_outer']
-    temp[:, 1:-1, 1:-1] = Du.unsqueeze(-1)
-    Du_outer = temp[:, idx_mask_outer[:, 1], idx_mask_outer[:, 0]]
-    cu_inner = matmul(u_full_inner[:, idx_mask_inner[:, 1], idx_mask_inner[:, 0]], c[idx_mask_inner[:, 1], idx_mask_inner[:, 0]]).unsqueeze(-1)
-    cu_outer = matmul(u_full_outer[:, idx_mask_outer[:, 1], idx_mask_outer[:, 0]], c[idx_mask_outer[:, 1], idx_mask_outer[:, 0]]).unsqueeze(-1)
-    loss_equ = myloss(Du_inner+cu_inner, f[:, idx_mask_inner[:, 1], idx_mask_inner[:, 0]])+myloss(Du_outer+cu_outer, f[:, idx_mask_outer[:, 1], idx_mask_outer[:, 0]])
-    loss_i = myloss(u_full_inner[:, idx_interface[:, 1], idx_interface[:, 0]], u_full_outer[:, idx_interface[:, 1], idx_interface[:, 0]]+1)
-    loss_i_grad = myloss(du_inner, du_outer)
-    loss_b = myloss(u_full_outer[:, idx_boundary[:, 1], idx_boundary[:, 0]], ub[:, idx_boundary[:, 1], idx_boundary[:, 0]])
-    coeff_equ, coeff_i, coeff_i_grad, coeff_b = coeffs['coeff_equ'], coeffs['coeff_i'], coeffs['coeff_i_grad'], coeffs['coeff_b']
-    loss = coeff_equ*loss_equ + coeff_i*loss_i + coeff_i_grad*loss_i_grad + coeff_b*loss_b
-    return loss
+    def compute_loss(self, u_inner, u_outer, f):
+        idx_mask_inner, idx_mask_outer = self.mask['idx_inner'], self.mask['idx_outer']
+        idx_closure_inner, idx_closure_outer = self.closure['idx_inner'], self.closure['idx_outer']
+        idx_interface, idx_boundary = self.line['idx_interface'], self.line['idx_boundary']
+        
+        u_full_inner = self.u_full_inner.clone()
+        u_full_outer = self.u_full_outer.clone()
+        u_full_inner[:, idx_closure_inner[:, 1], idx_closure_inner[:, 0]] = u_inner.squeeze(-1)
+        u_full_outer[:, idx_closure_outer[:, 1], idx_closure_outer[:, 0]] = u_outer.squeeze(-1)
+
+        u_inner = u_full_inner[:, idx_mask_inner[:, 1], idx_mask_inner[:, 0]]
+        u_outer = u_full_outer[:, idx_mask_outer[:, 1], idx_mask_outer[:, 0]]
+        u_interface_inner = u_full_inner[:, idx_interface[:, 1], idx_interface[:, 0]]
+        u_interface_outer = u_full_outer[:, idx_interface[:, 1], idx_interface[:, 0]]
+        u_boundary = u_full_outer[:, idx_boundary[:, 1], idx_boundary[:, 0]]
+        f_inner = f[:, idx_mask_inner[:, 1], idx_mask_inner[:, 0]].squeeze(-1)
+        f_outer = f[:, idx_mask_outer[:, 1], idx_mask_outer[:, 0]].squeeze(-1)
+
+        grads = self.FDM(u_full_inner)
+        Du, du_inner = grads['Du'], grads['du_inner']
+        temp = self.temp.clone()
+        temp[:, 1:-1, 1:-1] = Du
+        Du_inner = temp[:, idx_mask_inner[:, 1], idx_mask_inner[:, 0]]
+        grads = self.FDM(u_full_outer)
+        Du, du_outer = grads['Du'], grads['du_outer']
+        temp[:, 1:-1, 1:-1] = Du
+        Du_outer = temp[:, idx_mask_outer[:, 1], idx_mask_outer[:, 0]]
+
+        cu_inner = self.matmul(u_inner, self.c_inner)
+        cu_outer = self.matmul(u_outer, self.c_outer)
+        loss_equ = self.myloss(Du_inner+cu_inner, f_inner)+self.myloss(Du_outer+cu_outer, f_outer)
+        loss_i = self.myloss(u_interface_inner, u_interface_outer+1)
+        loss_i_grad = self.myloss(du_inner, du_outer)
+        loss_b = self.myloss(u_boundary, self.ub)
+        coeff_equ, coeff_i, coeff_i_grad, coeff_b = self.coeffs['coeff_equ'], self.coeffs['coeff_i'], self.coeffs['coeff_i_grad'], self.coeffs['coeff_b']
+        loss = coeff_equ*loss_equ + coeff_i*loss_i + coeff_i_grad*loss_i_grad + coeff_b*loss_b
+        return loss
 
 if __name__ == '__main__':
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     modes1 = 16
     modes2 = 16
     width = 32
-    epochs = 2000
+    epochs = 20000
     learning_rate = 0.001
     gamma = 0.5
     batch_size = 200
@@ -174,17 +197,17 @@ if __name__ == '__main__':
     model_inner_iphi = IPHI().to(device)
     optimizer_inner = Adam(model_inner.parameters(), betas=(0.9, 0.999), lr=learning_rate)
     optimizer_inner_iphi = Adam(model_inner_iphi.parameters(), betas=(0.9, 0.999), lr=learning_rate)
-    scheduler_inner = torch.optim.lr_scheduler.MultiStepLR(optimizer_inner, milestones=[500, 1000, 3500, 7000, 10000], gamma=gamma)
-    scheduler_inner_iphi = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_inner_iphi, T_max = 200)
+    scheduler_inner = torch.optim.lr_scheduler.MultiStepLR(optimizer_inner, milestones=[1000, 3500, 7000, 10000, 15000], gamma=gamma)
+    scheduler_inner_iphi = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_inner_iphi, T_max = 2000)
 
     model_outer = FNO2d(modes1, modes2, width, in_channels=3, out_channels=1).to(device)
     model_outer_iphi = IPHI().to(device)
     optimizer_outer = Adam(model_outer.parameters(), betas=(0.9, 0.999), lr=learning_rate)
     optimizer_outer_iphi = Adam(model_outer_iphi.parameters(), betas=(0.9, 0.999), lr=learning_rate)
-    scheduler_outer = torch.optim.lr_scheduler.MultiStepLR(optimizer_outer, milestones=[500, 1000, 3500, 7000, 10000], gamma=gamma)
-    scheduler_outer_iphi = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_outer_iphi, T_max = 200)
-
-    myloss = torch.nn.MSELoss(reduction='mean')
+    scheduler_outer = torch.optim.lr_scheduler.MultiStepLR(optimizer_outer, milestones=[1000, 3500, 7000, 10000, 15000], gamma=gamma)
+    scheduler_outer_iphi = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_outer_iphi, T_max = 2000)
+    pino_loss = PINOLoss(0.001, batch_size, N, mask, line, closure, coeffs, device)
+    
     mse_history = []
     rel_l2_history = []
     model_inner.train()
@@ -199,7 +222,7 @@ if __name__ == '__main__':
             optimizer_outer_iphi.zero_grad()
             out_i = model_inner(fx_i, x_in=fx_i[:, :, 1:], x_out=fx_i[:, :, 1:], iphi=model_inner_iphi)
             out_o = model_outer(fx_o, x_in=fx_o[:, :, 1:], x_out=fx_o[:, :, 1:], iphi=model_outer_iphi)
-            loss = PINO_loss(out_i, out_o, f, mask, line, closure, myloss, coeffs)
+            loss = pino_loss.compute_loss(out_i, out_o, f)
             loss.backward()
             optimizer_inner.step()
             optimizer_inner_iphi.step()
@@ -255,8 +278,11 @@ if __name__ == '__main__':
         x = fx[:, :, 1:]
         u_pred_outer = model_outer(fx, x_in=x, x_out=x, iphi=model_outer_iphi)
         up_pred = torch.concat((u_pred_inner, u_pred_outer), dim=-2).squeeze(-1)
-        print('test error on high resolution: relative L2 norm = ', torch.linalg.norm(up_pred.flatten() - u_test_fine.flatten()).item() / torch.linalg.norm(u_test_fine.flatten()).item())
-        print('test error on high resolution: relative L_infty norm = ', torch.linalg.norm(up_pred.flatten() -  u_test_fine.flatten(), ord=torch.inf).item() / torch.linalg.norm(u_test_fine.flatten(), ord=torch.inf).item())
+        res1 = torch.linalg.norm(up_pred.flatten() - u_test_fine.flatten()).item() / torch.linalg.norm(u_test_fine.flatten()).item()
+        res2 = torch.linalg.norm(up_pred.flatten() -  u_test_fine.flatten(), ord=torch.inf).item() / torch.linalg.norm(u_test_fine.flatten(), ord=torch.inf).item()
+        print('test error on high resolution: relative L2 norm = ', res1)
+        print('test error on high resolution: relative L_infty norm = ', res2)
+    np.save('DeepONet-type/2d-L-shaped/saved_data/res.npy', np.array([res1, res2]))
     plt.figure()
     plt.plot(np.arange(0, epochs+1, 100), rel_l2_history, '-*')
     plt.xlabel('epochs')
