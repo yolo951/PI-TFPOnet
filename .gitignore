@@ -11,3 +11,9 @@ DeepONet-type/2d-singular/generate_node_extra_data.py
 DeepONet-type/2d-singular/test.py
 DeepONet-type/2d-smooth/test.py
 DeepONet-type/2d-smooth/test_fno.py
+DeepONet-type/2d-smooth/saved_data/data.npz
+DeepONet-type/2d-smooth/saved_data/data_fno.npz
+DeepONet-type/2d-singular/saved_data/data.npz
+DeepONet-type/2d-singular/saved_data/data_fno.npz
+DeepONet-type/2d-L-shaped/saved_data/data_fno.npz
+DeepONet-type/2d-L-shaped/saved_data/data.npz
