@@ -1,6 +1,5 @@
-
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -144,14 +143,15 @@ modes2 = 12
 width = 16
 
 data = np.load("DeepONet-type/2d-singular/saved_data/data.npz")
+data_fno = np.load("DeepONet-type/2d-singular/saved_data/data_fno.npz")
 x_data = data['f_total'].reshape((ntotal, N+1, N+1))
 x_train = torch.tensor(x_data[:ntrain], dtype=torch.float32).unsqueeze(-1).to(device)
-y_train = torch.tensor(data['u_train_fine'][:, ::M, ::M], dtype=torch.float32).to(device)
+y_train = torch.tensor(data_fno['u_train_sparse'], dtype=torch.float32).to(device)
 
 grid_fine = np.linspace(0, 1, N*M+1)
 X, Y = np.meshgrid(grid_fine, grid_fine)
 points = np.stack((Y.flatten(), X.flatten()), axis=-1)
-f_fine_test = torch.tensor(data['f_fine'][-ntest:], dtype=torch.float32).unsqueeze(-1).to(device)  # test f on fine grid
+f_fine_test = torch.tensor(data_fno['f_test_fine'], dtype=torch.float32).unsqueeze(-1).to(device)  # test f on fine grid
 ut_fine = torch.tensor(data['u_test_fine'], dtype=torch.float32).to(device)  # test u on fine grid
 x_test = torch.tensor(x_data[-ntest:], dtype=torch.float32).unsqueeze(-1).to(device) # test f on sparse grid
 y_test = ut_fine[:, ::M, ::M]  # test u on sparse grid
