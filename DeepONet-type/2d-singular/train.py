@@ -72,12 +72,12 @@ model = DNN([(N+1)**2,512,256,128,128,256,512,4*N**2]).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
-# U_total = np.load(r'DeepONet-type\2d-singular\matrixU.npy')
-data = np.load(r"DeepONet-type\2d-singular\saved_data\data.npz")
+# U_total = np.load(r'DeepONet-type/2d-singular/matrixU.npy')
+data = np.load("DeepONet-type/2d-singular/saved_data/data.npz")
 f_total = data['f_total']/1000.0
 f = f_total.reshape((ntotal, N+1, N+1))
 B_total, C_total, up_total, index_of_u, val_of_u, ut_fine = data['B_total'], data['C_total'], data['up_total'], data['index'], data['val'], data['u_test_fine']
-extra_data = np.load(r"DeepONet-type\2d-singular\saved_data\extra_data.npz")
+extra_data = np.load("DeepONet-type/2d-singular/saved_data/extra_data.npz")
 idx, coeff, rhs = extra_data['idx'], extra_data['coeff'], extra_data['rhs'][:ntrain]
 f_train = torch.tensor(f_total[0:ntrain], dtype=torch.float32).to(device)
 index_of_u = torch.LongTensor(index_of_u).to(device)
@@ -160,9 +160,9 @@ for i in range(epochs):
         rel_l_infty = torch.linalg.norm(u_pred.flatten() - u.flatten(), ord=torch.inf) / torch.linalg.norm(u.flatten(), ord=torch.inf)
         rel_l2_history.append(rel_l2.item())
         print('epoch',i,': loss ',train_mse, 'rel_l2 ',rel_l2.item(), 'rel_l_infty ',rel_l_infty.item())
-np.save(r'DeepONet-type\2d-singular\saved_data\loss_history.npy', loss_history)
-np.save(r'DeepONet-type\2d-singular\saved_data\rel_l2_history.npy', rel_l2_history)
-torch.save(model.state_dict(), r'DeepONet-type\2d-singular\saved_data\model_state.pt')
+np.save('DeepONet-type/2d-singular/saved_data/loss_history.npy', loss_history)
+np.save('DeepONet-type/2d-singular/saved_data/rel_l2_history.npy', rel_l2_history)
+torch.save(model.state_dict(), 'DeepONet-type/2d-singular/saved_data/model_state.pt')
 
 C_pred = model(f_train).detach().cpu().reshape(f_train.shape[0], -1)
 up_pred = np.zeros((ntrain,N,N))
@@ -286,7 +286,7 @@ ax2.set_title('Point-wise error', fontsize=14)
 
 for ax in [ax0, ax1, ax2]:
     ax.set_aspect('equal')
-# plt.savefig(r'DeepONet-type\2d-singular\saved_data\2d_singular_compare.png')
+# plt.savefig('DeepONet-type/2d-singular/saved_data/2d_singular_compare.png')
 
 plt.figure()
 plt.plot(loss_history)
@@ -294,7 +294,7 @@ plt.xlabel('epochs')
 plt.ylabel('loss')
 # plt.ylim(1e-5, 1e+2)
 plt.yscale("log")
-plt.savefig(r'DeepONet-type\2d-singular\saved_data\2d_singular_loss.png')
+plt.savefig('DeepONet-type/2d-singular/saved_data/2d_singular_loss.png')
 # plt.show()
 
 plt.figure()
@@ -303,7 +303,7 @@ plt.xlabel('epochs')
 plt.ylabel('relative l2 error')
 # plt.ylim(1e-3, 1e+2)
 plt.yscale("log")
-plt.savefig(r'DeepONet-type\2d-singular\saved_data\2d_singular_l2.png')
+plt.savefig('DeepONet-type/2d-singular/saved_data/2d_singular_l2.png')
 plt.show()
 
 
