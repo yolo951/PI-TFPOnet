@@ -52,9 +52,9 @@ q1 = lambda x: 5.0
 q2 = lambda x: 0.1*(4+32*x)
 q = lambda x: torch.where(x<=0.5, q1(x), q2(x))
 
-f = np.load('f.npy')
-u1 = np.load('u1.npy')
-u2 = np.load('u2.npy')
+f = np.load('DeepONet-type/1d-singular/f.npy')
+u1 = np.load('DeepONet-type/1d-singular/u1.npy')
+u2 = np.load('DeepONet-type/1d-singular/u2.npy')
 u = np.concatenate((u1, u2[:, 1:]), axis=-1)
 
 Nx = f.shape[-1]
@@ -77,7 +77,7 @@ loc_b1 = torch.tile(torch.tensor([1.]), (N, 1)).to(device)
 loc_L = torch.tile(torch.tensor([0.5-0.02]), (N, 1)).to(device)
 loc_R = torch.tile(torch.tensor([0.5+0.02]), (N, 1)).to(device)
 train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(input_f, input_loc, output, rhs, loc_b0, loc_b1, loc_L, loc_R),
-                                           batch_size=1000, shuffle=True)
+                                           batch_size=33000, shuffle=True)
 
 model = DeepONet(Nx,  1).to(device)
 
@@ -107,6 +107,21 @@ for ep in range(epochs):
             mse_i = F.mse_loss(outR-outL, torch.ones_like(outL))#+F.mse_loss(y_lR-y_lL, torch.ones_like(y_lL))
             mse = mse_equ + mse_b + mse_i
 
+            grads = torch.autograd.grad(mse, model.parameters(), create_graph=True)
+            flat_grads = torch.cat([g.view(-1) for g in grads])
+            hessian = []
+            for g in flat_grads:
+                second_grads = torch.autograd.grad(g, model.parameters(), retain_graph=True)
+                flat_second_grads = torch.cat([sg.view(-1) for sg in second_grads])
+                hessian.append(flat_second_grads)
+            hessian_matrix = torch.stack(hessian)
+            eigvals = torch.linalg.eigvals(hessian_matrix).real
+            eigvals = np.sort(eigvals.detach().cpu().numpy())
+            np.save('DeepONet-type/1d-singular/pideeponet.npy', eigvals)
+            plt.plot(eigvals)
+            plt.xlabel('index')
+            plt.ylabel('eigenvalue')
+            plt.savefig('DeepONet-type/1d-singular/pideeponet_eigvals.png')
         mse.backward()
         optimizer.step()
         train_mse += mse.item()

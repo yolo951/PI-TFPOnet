@@ -52,9 +52,9 @@ q1 = lambda x: 5.0
 q2 = lambda x: 0.1*(4+32*x)
 q = lambda x: torch.where(x<=0.5, q1(x), q2(x))
 
-f = np.load('f.npy')
-u1 = np.load('u1.npy')
-u2 = np.load('u2.npy')
+f = np.load('DeepONet-type/1d-singular/f.npy')
+u1 = np.load('DeepONet-type/1d-singular/u1.npy')
+u2 = np.load('DeepONet-type/1d-singular/u2.npy')
 
 # u = np.concatenate((u1, u2[:, 1:]), axis=-1)
 
@@ -90,7 +90,11 @@ train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(input_
                                            batch_size=256, shuffle=True)
 
 model0 = DeepONet(half_Nx,  1).to(device)
+total_params = sum(p.numel() for p in model0.parameters())
+print(f"总参数量: {total_params}")
 model1 = DeepONet(half_Nx,  1).to(device)
+total_params = sum(p.numel() for p in model1.parameters())
+print(f"总参数量: {total_params}")
 
 optimizer0 = torch.optim.Adam(model0.parameters(), lr=1e-3, weight_decay=1e-4)
 optimizer1 = torch.optim.Adam(model1.parameters(), lr=1e-3, weight_decay=1e-4)
@@ -126,6 +130,33 @@ for ep in range(epochs):
             y_l1_mid = torch.autograd.grad(outputs=out1, inputs=lb_mid, grad_outputs=torch.ones_like(out1), create_graph=True)[0]
             mse_i = F.mse_loss(out1-out0, torch.ones_like(out0)) + F.mse_loss(y_l1_mid-y_l0_mid, torch.ones_like(y_l0_mid))
             mse = mse_equ + mse_b + mse_i
+            grads = torch.autograd.grad(mse, model0.parameters(), create_graph=True)
+            flat_grads = torch.cat([g.reshape(-1) for g in grads])
+            hessian = []
+            for g in flat_grads:
+                second_grads = torch.autograd.grad(g, model0.parameters(), retain_graph=True)
+                flat_second_grads = torch.cat([sg.reshape(-1) for sg in second_grads])
+                hessian.append(flat_second_grads)
+            hessian_matrix = torch.stack(hessian)
+            eigvals = torch.linalg.eigvals(hessian_matrix).real
+            eigvals = np.sort(eigvals.detach().cpu().numpy())
+            np.save('DeepONet-type/1d-singular/piionet_0.npy', eigvals)
+
+            grads = torch.autograd.grad(mse, model1.parameters(), create_graph=True)
+            flat_grads = torch.cat([g.reshape(-1) for g in grads])
+            hessian = []
+            for g in flat_grads:
+                second_grads = torch.autograd.grad(g, model1.parameters(), retain_graph=True)
+                flat_second_grads = torch.cat([sg.reshape(-1) for sg in second_grads])
+                hessian.append(flat_second_grads)
+            hessian_matrix = torch.stack(hessian)
+            eigvals = torch.linalg.eigvals(hessian_matrix).real
+            eigvals = np.sort(eigvals.detach().cpu().numpy())
+            np.save('DeepONet-type/1d-singular/piionet_1.npy', eigvals)
+            plt.plot(eigvals)
+            plt.xlabel('index')
+            plt.ylabel('eigenvalue')
+            plt.savefig('DeepONet-type/1d-singular/piionet_eigvals.png')
         mse.backward()
         optimizer0.step()
         optimizer1.step()
