@@ -1,6 +1,4 @@
 
-import sys
-sys.path.append('DeepONet-type')
 from Adam import Adam
 import numpy as np
 from scipy import interpolate
@@ -10,7 +8,6 @@ import torch
 import torch.nn as nn
 from collections import OrderedDict
 from scipy import interpolate
-from dim2_cnn import encoder_decoder
 import random
 import time
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -182,9 +179,6 @@ epochs = 15000
 learning_rate = 0.001
 batch_size = 64
 step_size = 1500
-gamma = 0.5
-# model = DNN([(N+1)**2,512,256,256,256,256,512,4*N**2]).to(device)
-# model = encoder_decoder().to(device)
 gamma = 0.5
 modes1 = 12
 modes2 = 12
