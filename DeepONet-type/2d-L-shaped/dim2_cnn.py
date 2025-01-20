@@ -47,7 +47,7 @@ class ConvBlock_Tanh(nn.Module):
 
 
 class encoder_decoder(nn.Module):
-    def __init__(self, dim1=16, dim2=32, dim3=64, dim4=128, dim5=256):
+    def __init__(self, dim1=32, dim2=64, dim3=128, dim4=256, dim5=512):
         super(encoder_decoder, self).__init__()
 
         # Encoder
@@ -58,11 +58,11 @@ class encoder_decoder(nn.Module):
         self.convblock3_2 = ConvBlock(dim3, dim3, kernel_size=3, padding=1)
         self.convblock4_1 = ConvBlock(dim3, dim4, kernel_size=3, stride=2, padding=1)
         self.convblock4_2 = ConvBlock(dim4, dim4, kernel_size=3, padding=1)
-        self.convblock5 = ConvBlock(dim4, dim5, kernel_size=3, stride=2, padding=1)
+        self.convblock5 = ConvBlock(dim4, dim5, kernel_size=3, stride=1, padding=1)
 
 
         # Decoder
-        self.deconv1_1 = DeconvBlock(dim5, dim4, kernel_size=2, stride=1, padding=0)
+        self.deconv1_1 = DeconvBlock(dim5, dim4, kernel_size=2, stride=2, padding=0)
         self.deconv1_2 = ConvBlock(dim4, dim4)
         self.deconv2_1 = DeconvBlock(dim4, dim3, kernel_size=4, stride=2, padding=1)
         self.deconv2_2 = ConvBlock(dim3, dim3)
@@ -77,25 +77,25 @@ class encoder_decoder(nn.Module):
         x = x.unsqueeze(1)
 
         # encoder
-        x = self.convblock1(x)  # (batch, 32, 16, 16)
-        x = self.convblock2_1(x)  # (batch, 64, 8, 8)
-        x = self.convblock2_2(x)  # (batch, 64, 8, 8)
-        x = self.convblock3_1(x)  # (batch, 128, 4, 4)
-        x = self.convblock3_2(x)  # (batch, 128, 4, 4)
-        x = self.convblock4_1(x)  # (batch, 256, 2, 2)
-        x = self.convblock4_2(x)  # (batch, 256, 2, 2)
-        x = self.convblock5(x)  # (batch, 512, 1, 1)
+        x = self.convblock1(x)  # (batch, 16, 17, 17)
+        x = self.convblock2_1(x)  # (batch, 32, 9, 9)
+        x = self.convblock2_2(x)  # (batch, 32, 9, 9)
+        x = self.convblock3_1(x)  # (batch, 64, 5, 5)
+        x = self.convblock3_2(x)  # (batch, 64, 5, 5)
+        x = self.convblock4_1(x)  # (batch, 128, 3, 3)
+        x = self.convblock4_2(x)  # (batch, 128, 3, 3)
+        x = self.convblock5(x)  # (batch, 256, 2, 2)
 
         # decoder
-        x = self.deconv1_1(x)  # (batch, 256, 4, 4)
-        x = self.deconv1_2(x)  # (batch, 256, 4, 4)
-        x = self.deconv2_1(x)  # (batch, 128, 8, 8)
-        x = self.deconv2_2(x)  # (batch, 128, 8, 8)
-        x = self.deconv3_1(x)  # (batch, 64, 16, 16)
-        x = self.deconv3_2(x)  # (batch, 64, 16, 16)
-        x = self.deconv4_1(x)  # (batch, 32, 32, 32)
-        x = self.deconv4_2(x)  # (batch, 32, 32, 32)
-        x = self.deconv5(x)  # (batch, 4, 32, 32)
+        x = self.deconv1_1(x)  # (batch, 128, 3, 3)
+        x = self.deconv1_2(x)  # (batch, 128, 3, 3)
+        x = self.deconv2_1(x)  # (batch, 64, 6, 6)
+        x = self.deconv2_2(x)  # (batch, 64, 6, 6)
+        x = self.deconv3_1(x)  # (batch, 32, 12, 12)
+        x = self.deconv3_2(x)  # (batch, 32, 12, 12)
+        x = self.deconv4_1(x)  # (batch, 16, 24, 24)
+        x = self.deconv4_2(x)  # (batch, 16, 24, 24)
+        x = self.deconv5(x)  # (batch, 4, 24, 24)
 
 
         x = x.permute(0, 2, 3, 1)
