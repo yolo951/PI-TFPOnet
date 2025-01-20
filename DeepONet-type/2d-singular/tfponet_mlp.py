@@ -6,9 +6,7 @@ import matplotlib.pyplot as plt
 import torch
 from collections import OrderedDict
 from scipy import interpolate
-from dim2_cnn import encoder_decoder
 import random
-import time
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class DNN(torch.nn.Module):
@@ -69,8 +67,6 @@ batch_size = 32
 step_size = 2000
 gamma = 0.5
 model = DNN([(N+1)**2,512,256,128,128,256,512,4*N**2]).to(device)
-total_params = sum(p.numel() for p in model.parameters())
-print(f"# params: {total_params}")
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
@@ -122,7 +118,6 @@ rel_l2_history = []
 for i in range(epochs):
     model.train()
     train_mse = 0
-    t1 = time.time()
     for fb, Bb, Cb, r in train_loader:
         optimizer.zero_grad()
         Cb_pred = model(fb)
@@ -157,8 +152,6 @@ for i in range(epochs):
     loss_history.append(train_mse)
     
     if i==0 or (i+1)%100==0:
-        t2 = time.time()
-        print(t2-t1)
         u_pred = model(f_test).reshape(ntest, -1, 4).sum(axis=-1)
         u = C_test.reshape(ntest, -1, 4).sum(axis=-1)
         rel_l2 = torch.linalg.norm(u_pred.flatten() - u.flatten()) / torch.linalg.norm(u.flatten())
