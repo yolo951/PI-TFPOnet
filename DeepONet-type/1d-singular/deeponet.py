@@ -107,21 +107,6 @@ for ep in range(epochs):
             mse_i = F.mse_loss(outR-outL, torch.ones_like(outL))#+F.mse_loss(y_lR-y_lL, torch.ones_like(y_lL))
             mse = mse_equ + mse_b + mse_i
 
-            grads = torch.autograd.grad(mse, model.parameters(), create_graph=True)
-            flat_grads = torch.cat([g.view(-1) for g in grads])
-            hessian = []
-            for g in flat_grads:
-                second_grads = torch.autograd.grad(g, model.parameters(), retain_graph=True)
-                flat_second_grads = torch.cat([sg.view(-1) for sg in second_grads])
-                hessian.append(flat_second_grads)
-            hessian_matrix = torch.stack(hessian)
-            eigvals = torch.linalg.eigvals(hessian_matrix).real
-            eigvals = np.sort(eigvals.detach().cpu().numpy())
-            np.save('DeepONet-type/1d-singular/pideeponet.npy', eigvals)
-            plt.plot(eigvals)
-            plt.xlabel('index')
-            plt.ylabel('eigenvalue')
-            plt.savefig('DeepONet-type/1d-singular/pideeponet_eigvals.png')
         mse.backward()
         optimizer.step()
         train_mse += mse.item()
