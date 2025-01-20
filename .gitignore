@@ -14,3 +14,4 @@ DeepONet-type/2d-smooth/test_fno.py
 DeepONet-type/2d-singular/saved_data/data.npz
 DeepONet-type/2d-L-shaped/saved_data/data.npz
 DeepONet-type/2d-smooth/saved_data/data.npz
+DeepONet-type/2d-L-shaped/dim2_cnn.py
